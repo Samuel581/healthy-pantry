@@ -161,6 +161,31 @@ class ItemFormViewModelTest {
     }
 
     @Test
+    fun `an unexpected exception from a lookup surfaces as an error instead of crashing`() = runTest {
+        val repository = object : NutritionLookupRepository {
+            override suspend fun lookupByBarcode(barcode: String): Result<NutritionResult, NutritionLookupError> {
+                throw IllegalStateException("boom")
+            }
+
+            override suspend fun searchByName(name: String): Result<NutritionResult, NutritionLookupError> {
+                throw IllegalStateException("boom")
+            }
+        }
+        val viewModel = buildViewModel(repository)
+
+        viewModel.onBarcodeScanned("0123456789")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(false, state.isLookingUp)
+        assertTrue(state.lookupError!!.isNotBlank())
+
+        // Still fully editable/savable manually - an unexpected lookup failure must never block the form.
+        viewModel.onNameChanged("Homemade granola")
+        assertEquals("Homemade granola", viewModel.buildFoodItem().name)
+    }
+
+    @Test
     fun `loadExisting seeds the form and marks every field touched so a stray lookup cannot clobber it`() = runTest {
         val repository = FakeNutritionLookupRepository(barcodeResult = Result.success(bananaResult(calories = 999.0)))
         val viewModel = buildViewModel(repository)

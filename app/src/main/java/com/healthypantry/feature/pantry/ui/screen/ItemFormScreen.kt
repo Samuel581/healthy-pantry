@@ -17,6 +17,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +51,10 @@ import com.healthypantry.feature.pantry.ui.vm.PantryViewModel
  * the stateless [ItemFormContent]. [existingItem] puts the form in edit mode; there is no
  * navigation entry point wired to it yet (the nav graph is a later phase), but the ViewModel and
  * Save-button branching already support both add and edit for when one is added.
+ *
+ * [PantryViewModel.addItem]/[PantryViewModel.updateItem] are fire-and-forget, so [onSaved] fires
+ * immediately on tap rather than waiting for persistence to confirm; a later failure still
+ * surfaces via [PantryViewModel.errorEvent] as a Snackbar, same as [PantryListScreen].
  */
 @Composable
 fun ItemFormScreen(
@@ -64,6 +70,17 @@ fun ItemFormScreen(
         existingItem?.let(itemFormViewModel::loadExisting)
     }
     val uiState by itemFormViewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // PantryViewModel.addItem/updateItem are fire-and-forget (see PantryViewModel.launchOnIo) - a
+    // save failure (e.g. a Room constraint violation) can only surface after onSaved() has already
+    // navigated away, so it's collected here rather than awaited, matching PantryListScreen's own
+    // errorEvent-as-Snackbar convention.
+    LaunchedEffect(pantryViewModel) {
+        pantryViewModel.errorEvent.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
 
     ItemFormContent(
         uiState = uiState,
@@ -84,6 +101,7 @@ fun ItemFormScreen(
         },
         onCancelClick = onCancel,
         modifier = modifier,
+        snackbarHostState = snackbarHostState,
     )
 }
 
@@ -108,8 +126,12 @@ fun ItemFormContent(
     onSaveClick: () -> Unit,
     onCancelClick: () -> Unit,
     modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
-    Scaffold(modifier = modifier) { innerPadding ->
+    Scaffold(
+        modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)

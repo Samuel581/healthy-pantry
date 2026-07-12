@@ -10,6 +10,7 @@ import com.healthypantry.feature.nutrition.domain.model.NutritionLookupError
 import com.healthypantry.feature.pantry.domain.model.FoodItem
 import com.healthypantry.feature.pantry.domain.model.FoodItemSource
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,7 +81,7 @@ class ItemFormViewModel @Inject constructor(
      */
     fun onBarcodeScanned(barcode: String) {
         _uiState.update { it.copy(isLookingUp = true, lookupError = null) }
-        viewModelScope.launch(dispatcherProvider.io) {
+        launchLookup {
             when (val result = nutritionLookupRepository.lookupByBarcode(barcode)) {
                 is Result.Success -> _uiState.update {
                     it.prefillFrom(result.value, source = FoodItemSource.BARCODE, barcode = barcode)
@@ -100,7 +101,7 @@ class ItemFormViewModel @Inject constructor(
      */
     fun onUsdaSearch(query: String) {
         _uiState.update { it.copy(isLookingUp = true, lookupError = null) }
-        viewModelScope.launch(dispatcherProvider.io) {
+        launchLookup {
             when (val result = nutritionLookupRepository.searchByName(query)) {
                 is Result.Success -> _uiState.update {
                     // USDA-sourced macros still count as manually-initiated entry: FoodItemSource
@@ -119,6 +120,26 @@ class ItemFormViewModel @Inject constructor(
 
     /** Builds the [FoodItem] to persist from the current form state (see [ItemFormUiState.toFoodItem]). */
     fun buildFoodItem(existingId: Long = 0L): FoodItem = uiState.value.toFoodItem(existingId)
+
+    /**
+     * Runs a lookup [block] on [DispatcherProvider.io], guarding against any exception the OFF/USDA
+     * sources don't already convert into a typed [Result] (e.g. a malformed community-sourced OFF
+     * payload) - mirrors `PantryViewModel.launchOnIo`'s catch-all so a lookup failure degrades to
+     * manual entry instead of crashing the form.
+     */
+    private fun launchLookup(block: suspend () -> Unit) {
+        viewModelScope.launch(dispatcherProvider.io) {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(isLookingUp = false, lookupError = e.message ?: "Lookup failed. You can enter macros manually.")
+                }
+            }
+        }
+    }
 }
 
 private fun NutritionLookupError.toUserMessage(): String = when (this) {
