@@ -13,8 +13,10 @@ import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -104,6 +106,17 @@ class PantryViewModelTest {
         private fun recomputeTotal(foodItemId: Long) {
             val total = batches.filter { it.foodItemId == foodItemId }.sumOf { it.quantity }
             totals.getOrPut(foodItemId) { MutableStateFlow(0.0) }.value = total
+        }
+    }
+
+    /** Always throws on write, to prove [PantryViewModel] doesn't crash on a repository failure. */
+    private class FailingFoodItemRepository : FoodItemRepository {
+        override fun observeAll(): Flow<List<FoodItem>> = MutableStateFlow(emptyList())
+        override fun observeById(id: Long): Flow<FoodItem?> = MutableStateFlow(null)
+        override suspend fun upsert(item: FoodItem): Long =
+            throw IllegalStateException("simulated repository failure")
+        override suspend fun delete(item: FoodItem) {
+            throw IllegalStateException("simulated repository failure")
         }
     }
 
@@ -231,5 +244,19 @@ class PantryViewModelTest {
         val row = viewModel.uiState.value.items.first()
         assertEquals("Grilled chicken breast", row.foodItem.name)
         assertEquals(1.8, row.foodItem.caloriesPerUnit, 0.0001)
+    }
+
+    @Test
+    fun `addItem emits an errorEvent instead of crashing when the repository throws`() = runTest {
+        val viewModel = buildViewModel(FailingFoodItemRepository(), FakeStockBatchRepository())
+        viewModel.startCollecting()
+
+        val errorDeferred = async { viewModel.errorEvent.first() }
+        advanceUntilIdle()
+
+        viewModel.addItem(chickenBreast())
+        advanceUntilIdle()
+
+        assertEquals("simulated repository failure", errorDeferred.await())
     }
 }

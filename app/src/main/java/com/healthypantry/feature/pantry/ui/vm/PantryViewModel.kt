@@ -3,6 +3,7 @@ package com.healthypantry.feature.pantry.ui.vm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.healthypantry.core.common.DispatcherProvider
+import kotlinx.coroutines.CancellationException
 import com.healthypantry.feature.pantry.data.repo.FoodItemRepository
 import com.healthypantry.feature.pantry.data.repo.StockBatchRepository
 import com.healthypantry.feature.pantry.domain.model.FoodItem
@@ -11,8 +12,11 @@ import com.healthypantry.feature.pantry.domain.usecase.ComputeProjectedStockUseC
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -66,6 +70,16 @@ class PantryViewModel @Inject constructor(
                 initialValue = PantryUiState(isLoading = true),
             )
 
+    private val _errorEvent = MutableSharedFlow<String>()
+
+    /**
+     * One-off failures from [addItem]/[updateItem]/[deleteItem]/[addStockBatch] (e.g. a Room
+     * constraint violation from an unrelated concurrent delete). A [SharedFlow], not part of
+     * [uiState], since these are transient events (surface a snackbar) rather than persistent
+     * UI state.
+     */
+    val errorEvent: SharedFlow<String> = _errorEvent.asSharedFlow()
+
     private fun observeRowsFor(items: List<FoodItem>): Flow<PantryUiState> {
         if (items.isEmpty()) {
             return flowOf(PantryUiState(items = emptyList(), isLoading = false))
@@ -92,7 +106,19 @@ class PantryViewModel @Inject constructor(
     fun addStockBatch(batch: StockBatch) = launchOnIo { stockBatchRepository.upsert(batch) }
 
     private fun launchOnIo(block: suspend () -> Unit) {
-        viewModelScope.launch(dispatcherProvider.io) { block() }
+        viewModelScope.launch(dispatcherProvider.io) {
+            try {
+                block()
+            } catch (e: Exception) {
+                // Repository calls are plain suspend functions that can throw (e.g. a Room
+                // FOREIGN KEY violation on addStockBatch for a since-deleted item) - catch here
+                // so a single failed action surfaces as a recoverable event instead of crashing
+                // the whole screen. CancellationException is rethrown so cancelling a launch
+                // (e.g. ViewModel cleared) isn't mistaken for a real failure.
+                if (e is CancellationException) throw e
+                _errorEvent.emit(e.message ?: "Something went wrong")
+            }
+        }
     }
 
     private companion object {
