@@ -41,9 +41,9 @@ Every implementation task is RED (failing test) then GREEN (make it pass) per St
 
 Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev`.
 
-## Phase 2: Core Domain (PR2)
-- [ ] 2.1 RED/GREEN `UnitConverterTest`/`UnitConverter` + `MeasurementUnit` enum (spec: Unit Conversion Correctness).
-- [ ] 2.2 `core/common` Result/DispatcherProvider; `core/network` Retrofit/OkHttp Hilt module.
+## Phase 2: Core Domain (PR2) — ✅ COMPLETE
+- [x] 2.1 RED/GREEN `UnitConverterTest`/`UnitConverter` + `MeasurementUnit` enum (spec: Unit Conversion Correctness).
+- [x] 2.2 `core/common` Result/DispatcherProvider; `core/network` Retrofit/OkHttp Hilt module.
 
 ## Phase 3: Pantry Data (PR3)
 - [ ] 3.1 RED/GREEN Robolectric DAO tests + `FoodItem`/`UnitConversion`/`StockBatch` entities, DAOs, `AppDatabase` v1 (spec: Item and Stock Batch CRUD).
