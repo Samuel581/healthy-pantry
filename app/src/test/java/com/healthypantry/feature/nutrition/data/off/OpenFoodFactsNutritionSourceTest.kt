@@ -100,4 +100,40 @@ class OpenFoodFactsNutritionSourceTest {
 
         assertTrue(result.errorOrNull() is NutritionLookupError.NetworkError)
     }
+
+    @Test
+    fun `lookupByBarcode returns NotFound for a 404 response, not an ApiError`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(404))
+
+        val result = source.lookupByBarcode("0000000000000")
+
+        assertEquals(NutritionLookupError.NotFound, result.errorOrNull())
+    }
+
+    @Test
+    fun `lookupByBarcode leaves missing macro fields null instead of defaulting to zero`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "status": 1,
+                  "product": {
+                    "product_name": "Mystery Snack",
+                    "nutriments": {
+                      "energy-kcal_100g": 120.0
+                    }
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = source.lookupByBarcode("0123456789012")
+
+        val value = result.getOrNull()
+        assertEquals(120.0, value?.caloriesPer100 ?: -1.0, 0.0001)
+        assertEquals(null, value?.proteinGramsPer100)
+        assertEquals(null, value?.carbsGramsPer100)
+        assertEquals(null, value?.fatGramsPer100)
+    }
 }
