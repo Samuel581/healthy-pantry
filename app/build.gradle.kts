@@ -67,6 +67,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        // Robolectric DAO tests (feature/pantry/data) need the manifest + resources on the
+        // unit-test classpath; without this Robolectric can't resolve the AndroidManifest.
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -112,6 +118,9 @@ dependencies {
 
     // Unit tests (JVM)
     testImplementation(libs.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
 
     // Instrumented tests
     androidTestImplementation(libs.androidx.test.ext.junit)

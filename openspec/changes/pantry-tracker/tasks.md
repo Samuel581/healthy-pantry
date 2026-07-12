@@ -46,7 +46,11 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
 - [x] 2.2 `core/common` Result/DispatcherProvider; `core/network` Retrofit/OkHttp Hilt module.
 
 ## Phase 3: Pantry Data (PR3)
-- [ ] 3.1 RED/GREEN Robolectric DAO tests + `FoodItem`/`UnitConversion`/`StockBatch` entities, DAOs, `AppDatabase` v1 (spec: Item and Stock Batch CRUD).
+
+> Split into PR3a (entities/DAOs) and PR3b (repositories) — PR3 came in at 1209 lines,
+> over the 400-line review budget; user chose to split rather than accept as exception.
+
+- [x] 3.1 RED/GREEN Robolectric DAO tests + `FoodItem`/`UnitConversion`/`StockBatch` entities, DAOs, `AppDatabase` v1 (spec: Item and Stock Batch CRUD). — PR3a, branch `feat/pantry-entities-dao`
 - [ ] 3.2 `FoodItemRepository`, `StockBatchRepository`.
 
 ## Phase 4: Pantry Domain (PR4)
