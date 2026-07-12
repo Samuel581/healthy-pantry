@@ -1,0 +1,34 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Kotlin + Jetpack Compose (Material 3), Hilt DI, Room (Flow-based DAOs), WorkManager, Retrofit/OkHttp.
+  Architecture: Layered UI (Compose + ViewModel) -> Domain (use-cases) -> Data (repositories wrapping Room + network).
+  Package layout: package-by-feature (app/, core/{database,unit,common,network}, feature/{pantry,nutrition,planning,recipes,expiry}/{data,domain,ui}).
+  Testing: JUnit (JVM unit tests for domain/use-cases), Robolectric + in-memory Room (DAO tests), MockWebServer (network fakes), Compose UI tests + WorkManager TestDriver (instrumented).
+  Style: Conventional Commits, no Co-Authored-By trailers, branch naming type/description.
+  Platform: Android, minSdk 26, compileSdk/targetSdk 36, JDK 17 toolchain, single-user/local-only (Room, no cloud/Firebase/auth).
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    guidelines:
+      - Follow existing code patterns
+      - One branch + one PR per task, cut from and merged into `dev` (serial delivery, not stacked)
+    tdd: true
+    test_command: "./gradlew test"
+  verify:
+    test_command: "./gradlew test"
+    build_command: "./gradlew build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
