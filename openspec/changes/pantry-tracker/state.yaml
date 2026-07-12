@@ -1,0 +1,41 @@
+change: pantry-tracker
+schema: spec-driven
+artifact_store: openspec
+
+# Switched from engram to openspec on 2026-07-12 after the Engram MCP server
+# disconnected mid-chain (during PR2 kickoff). Proposal/spec/design/tasks below
+# were reconstructed from conversation record; see individual file headers.
+
+dag:
+  proposal: done
+  specs: done
+  design: done
+  tasks: done
+  apply: in_progress
+  verify: pending
+  archive: pending
+
+delivery_strategy: ask-on-risk
+chain_strategy: serial   # each branch cut from dev only after previous PR merges to dev; every PR targets dev
+execution_mode: interactive
+
+git:
+  base_branch: dev
+  convention: one branch + one PR per task, branch from dev, PR targets dev, merge before next branch
+
+apply_progress:
+  - pr: 1
+    work_unit: "Scaffolding"
+    branch: chore/scaffold-project
+    status: implemented_pending_review
+    commit: d9de8c1
+    tasks_done: ["1.1", "1.2"]
+    notes: >
+      ./gradlew build and ./gradlew test both pass. Instrumented smoke test compiles/packages
+      but not executed (no emulator in sandbox). Bounded review started via `gentle-ai review
+      start` (lineage review-ab04fbdab836207d, risk medium, lens review-reliability,
+      changed_files 2, changed_lines 52) but not yet finalized before Engram disconnected.
+  - pr: 2
+    work_unit: "Core domain - MeasurementUnit + UnitConverter"
+    branch: feat/core-unit-conversion
+    status: not_started

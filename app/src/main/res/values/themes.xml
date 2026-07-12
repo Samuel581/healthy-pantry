@@ -1,0 +1,5 @@
+<resources>
+    <!-- Compose renders all UI; this XML theme only controls the window chrome
+         before the first Compose frame draws (no windowBackground flash / no action bar). -->
+    <style name="Theme.HealthyPantry" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
