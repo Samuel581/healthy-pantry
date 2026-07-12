@@ -1,6 +1,7 @@
 package com.healthypantry.feature.nutrition.data.di
 
 import com.healthypantry.feature.nutrition.data.off.OpenFoodFactsApi
+import com.healthypantry.feature.nutrition.data.usda.UsdaFoodDataCentralApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -18,6 +19,7 @@ import javax.inject.Singleton
 object NutritionNetworkModule {
 
     private const val OPEN_FOOD_FACTS_BASE_URL = "https://world.openfoodfacts.org/"
+    private const val USDA_FOOD_DATA_CENTRAL_BASE_URL = "https://api.nal.usda.gov/fdc/"
 
     @Provides
     @Singleton
@@ -26,4 +28,12 @@ object NutritionNetworkModule {
             .baseUrl(OPEN_FOOD_FACTS_BASE_URL)
             .build()
             .create(OpenFoodFactsApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideUsdaFoodDataCentralApi(retrofit: Retrofit): UsdaFoodDataCentralApi =
+        retrofit.newBuilder()
+            .baseUrl(USDA_FOOD_DATA_CENTRAL_BASE_URL)
+            .build()
+            .create(UsdaFoodDataCentralApi::class.java)
 }
