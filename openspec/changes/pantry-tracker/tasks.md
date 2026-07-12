@@ -68,7 +68,39 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
   - Manual-override precedence (spec scenario "Manual macro override always wins") is a `FoodItem`/form concern, not the repository's — it belongs in PR6 (`ItemFormScreen`/`PantryViewModel`), not here. Documented as an explicit doc-comment note on `NutritionLookupRepositoryImpl`.
 
 ## Phase 6: Pantry UI (PR6)
-- [ ] 6.1 `PantryViewModel`+tests; `PantryListScreen`, `ItemFormScreen` (Code Scanner + manual + USDA search) + compose tests.
+
+> Split proactively (see PR3/PR5 notes above): 6.1 (`PantryViewModel`+tests) landed alone on
+> branch `feat/pantry-ui` — diff ~366 lines (101 `PantryViewModel.kt` + 30 `MainDispatcherRule.kt`
+> + 235 `PantryViewModelTest.kt`, minus 1 deleted `.gitkeep`). Adding `PantryListScreen` and
+> `ItemFormScreen` (Code Scanner + manual + USDA search + macro override + Compose UI tests) in
+> the same branch was estimated to push the diff well past the ~400-450 line budget (similar
+> complexity to what caused PR3/PR5 to split), so those two screens are deferred to follow-up
+> PRs (6.2, 6.3) per the size-guard instruction to stop rather than cram.
+
+- [x] 6.1 RED/GREEN `PantryViewModel` (`feature/pantry/ui/vm`) joining `FoodItemRepository`/
+  `StockBatchRepository`/`ComputeProjectedStockUseCase` into a single `uiState: StateFlow`
+  (`PantryUiState`/`PantryItemUi`), plus `addItem`/`updateItem`/`deleteItem`/`addStockBatch`
+  actions dispatched via injected `DispatcherProvider` (spec: Item and Stock Batch CRUD,
+  Projected vs Actual Stock). `PlanEntry` doesn't exist yet (PR7/PR8), so committed quantity is
+  always `0.0` — projected stock equals actual stock until PR8 wires a real commitment source.
+  Hand-written fake `FoodItemRepository`/`StockBatchRepository` (same convention as
+  `ComputeProjectedStockUseCaseTest`/`FoodItemRepositoryTest`), plus a new reusable
+  `MainDispatcherRule` test utility (`core/common`, JUnit `TestWatcher` swapping
+  `Dispatchers.Main` for a `TestDispatcher`, needed because `viewModelScope` hardcodes
+  `Dispatchers.Main.immediate`) for future ViewModel tests (PR9). 6 RED/GREEN test cases in
+  `PantryViewModelTest`. Landed on branch `feat/pantry-ui` (cut from `dev`).
+- [ ] 6.2 `PantryListScreen` (Compose, Material 3) — list of pantry items showing name, actual
+  stock, projected stock; swipe/button to delete; FAB to add new item; `hiltViewModel()` to
+  obtain `PantryViewModel`. Not started.
+- [ ] 6.3 `ItemFormScreen` (Compose) — add/edit a `FoodItem`. "Scan barcode" button launching
+  Google Code Scanner (`GmsBarcodeScanning`) → `NutritionLookupRepository.lookupByBarcode` to
+  pre-fill the form (miss → manual-entry mode, per PR5's spec scenario "Barcode not found in
+  Open Food Facts"); "Search by name" flow calling `NutritionLookupRepository.searchByName`;
+  editable macro fields the user can override, which take precedence over any lookup result once
+  touched (spec scenario "Manual macro override always wins", deferred here from PR5 per its
+  doc-comment note on `NutritionLookupRepositoryImpl`). Compose UI tests (compile/package only,
+  no emulator in this sandbox — same precedent as PR1's `HarnessInstrumentedSmokeTest`). Not
+  started.
 
 ## Phase 7: Meal-Planning Data (PR7)
 - [ ] 7.1 RED/GREEN `Recipe`/`RecipeIngredient`/`PlanEntry` entities, DAOs, repos (spec: Recipe CRUD, Weekly Plan Assignment).
