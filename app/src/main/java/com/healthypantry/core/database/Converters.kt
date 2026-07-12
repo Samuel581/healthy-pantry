@@ -3,6 +3,8 @@ package com.healthypantry.core.database
 import androidx.room.TypeConverter
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.pantry.domain.model.FoodItemSource
+import com.healthypantry.feature.planning.domain.model.MealSlot
+import com.healthypantry.feature.planning.domain.model.PlanEntryType
 import java.time.Instant
 import java.time.LocalDate
 
@@ -36,4 +38,16 @@ class Converters {
 
     @TypeConverter
     fun toInstant(value: Long): Instant = Instant.ofEpochMilli(value)
+
+    @TypeConverter
+    fun fromMealSlot(slot: MealSlot): String = slot.name
+
+    @TypeConverter
+    fun toMealSlot(value: String): MealSlot = MealSlot.valueOf(value)
+
+    @TypeConverter
+    fun fromPlanEntryType(type: PlanEntryType): String = type.name
+
+    @TypeConverter
+    fun toPlanEntryType(value: String): PlanEntryType = PlanEntryType.valueOf(value)
 }
