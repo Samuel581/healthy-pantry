@@ -33,6 +33,9 @@ retrofit = "3.0.0"
 okhttp = "5.4.0"
 kotlinxSerializationJson = "1.11.0"
 
+# Coroutines (DispatcherProvider abstraction, testable async code)
+kotlinxCoroutines = "1.10.2"
+
 # Testing
 junit4 = "4.13.2"
 androidxTestExtJunit = "1.3.0"
@@ -71,6 +74,8 @@ squareup-retrofit-converter-kotlinx-serialization = { group = "com.squareup.retr
 squareup-okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 squareup-okhttp-logging-interceptor = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 
 junit4 = { group = "junit", name = "junit", version.ref = "junit4" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
