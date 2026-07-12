@@ -53,8 +53,8 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
 - [x] 3.1 RED/GREEN Robolectric DAO tests + `FoodItem`/`UnitConversion`/`StockBatch` entities, DAOs, `AppDatabase` v1 (spec: Item and Stock Batch CRUD). — PR3a, branch `feat/pantry-entities-dao`
 - [x] 3.2 `FoodItemRepository`, `StockBatchRepository`. — PR3b, branch `feat/pantry-repositories`
 
-## Phase 4: Pantry Domain (PR4)
-- [ ] 4.1 RED/GREEN `ComputeProjectedStockUseCase` (spec: Projected vs Actual Stock).
+## Phase 4: Pantry Domain (PR4) — ✅ COMPLETE
+- [x] 4.1 RED/GREEN `ComputeProjectedStockUseCase` (spec: Projected vs Actual Stock).
 
 ## Phase 5: Nutrition Lookup (PR5)
 - [ ] 5.1 RED/GREEN `NutritionLookupRepository`, OFF/USDA Retrofit sources, fallback+manualOverride (spec: Barcode Scan, Manual Entry with USDA Fallback).
