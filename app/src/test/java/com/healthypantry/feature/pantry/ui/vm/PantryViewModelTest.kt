@@ -103,6 +103,9 @@ class PantryViewModelTest {
             recomputeTotal(batch.foodItemId)
         }
 
+        override suspend fun decrementForFoodItem(foodItemId: Long, amount: Double): Unit =
+            throw NotImplementedError("not used by PantryViewModelTest")
+
         private fun recomputeTotal(foodItemId: Long) {
             val total = batches.filter { it.foodItemId == foodItemId }.sumOf { it.quantity }
             totals.getOrPut(foodItemId) { MutableStateFlow(0.0) }.value = total

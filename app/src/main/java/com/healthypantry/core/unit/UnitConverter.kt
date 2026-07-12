@@ -1,6 +1,7 @@
 package com.healthypantry.core.unit
 
 import com.healthypantry.core.common.Result
+import javax.inject.Inject
 
 /**
  * Converts a quantity between two [MeasurementUnit]s for a specific food item, using only the
@@ -12,8 +13,13 @@ import com.healthypantry.core.common.Result
  * Room until PR3 wires persistence); if no factor — direct or inverse — connects the requested
  * units, this returns [Result.Failure] with [UnitConversionError.UnresolvedConversion] instead
  * of guessing a 1:1 conversion.
+ *
+ * `@Inject constructor()`: PR2 never needed Hilt to construct this (only plain-JUnit tests
+ * called `UnitConverter()` directly). PR8's `ComputeMacroTotalsUseCase`/`ComputeWeeklyNeedsUseCase`/
+ * `MarkPlanEntryEatenUseCase` are the first production `@Inject` sites for this class, so without
+ * this annotation Hilt's compile-time graph validation would fail on those use-cases.
  */
-class UnitConverter {
+class UnitConverter @Inject constructor() {
 
     fun convert(
         quantity: Double,

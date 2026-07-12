@@ -24,6 +24,14 @@ interface StockBatchDao {
     fun observeForFoodItem(foodItemId: Long): Flow<List<StockBatchEntity>>
 
     /**
+     * One-shot (non-[Flow]) FIFO-ordered read of every batch for [foodItemId], used by
+     * `StockBatchRepository.decrementForFoodItem` to consume the oldest stock first without
+     * needing to collect a [Flow] inside a suspend function.
+     */
+    @Query("SELECT * FROM stock_batch WHERE foodItemId = :foodItemId ORDER BY addedAt ASC")
+    suspend fun getForFoodItem(foodItemId: Long): List<StockBatchEntity>
+
+    /**
      * Total on-hand quantity currently held for a food item, across all its (non-deleted)
      * batches. `COALESCE(..., 0.0)` guarantees a value even when no batches exist, and Room's
      * `Flow` re-runs this query — and thus re-excludes deleted rows — on every table write, so a
