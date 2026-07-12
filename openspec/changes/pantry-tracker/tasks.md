@@ -51,7 +51,7 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
 > over the 400-line review budget; user chose to split rather than accept as exception.
 
 - [x] 3.1 RED/GREEN Robolectric DAO tests + `FoodItem`/`UnitConversion`/`StockBatch` entities, DAOs, `AppDatabase` v1 (spec: Item and Stock Batch CRUD). — PR3a, branch `feat/pantry-entities-dao`
-- [ ] 3.2 `FoodItemRepository`, `StockBatchRepository`.
+- [x] 3.2 `FoodItemRepository`, `StockBatchRepository`. — PR3b, branch `feat/pantry-repositories`
 
 ## Phase 4: Pantry Domain (PR4)
 - [ ] 4.1 RED/GREEN `ComputeProjectedStockUseCase` (spec: Projected vs Actual Stock).
