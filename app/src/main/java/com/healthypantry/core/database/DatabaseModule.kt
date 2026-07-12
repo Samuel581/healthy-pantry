@@ -5,6 +5,9 @@ import androidx.room.Room
 import com.healthypantry.feature.pantry.data.dao.FoodItemDao
 import com.healthypantry.feature.pantry.data.dao.StockBatchDao
 import com.healthypantry.feature.pantry.data.dao.UnitConversionDao
+import com.healthypantry.feature.planning.data.dao.PlanEntryDao
+import com.healthypantry.feature.recipes.data.dao.RecipeDao
+import com.healthypantry.feature.recipes.data.dao.RecipeIngredientDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -32,4 +35,13 @@ object DatabaseModule {
 
     @Provides
     fun provideStockBatchDao(database: AppDatabase): StockBatchDao = database.stockBatchDao()
+
+    @Provides
+    fun provideRecipeDao(database: AppDatabase): RecipeDao = database.recipeDao()
+
+    @Provides
+    fun provideRecipeIngredientDao(database: AppDatabase): RecipeIngredientDao = database.recipeIngredientDao()
+
+    @Provides
+    fun providePlanEntryDao(database: AppDatabase): PlanEntryDao = database.planEntryDao()
 }
