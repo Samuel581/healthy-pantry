@@ -27,14 +27,16 @@ apply_progress:
   - pr: 1
     work_unit: "Scaffolding"
     branch: chore/scaffold-project
-    status: implemented_pending_review
-    commit: d9de8c1
+    status: merged
+    commit: d9de8c1 (+ 50aa939 openspec bootstrap)
+    pr_url: https://github.com/Samuel581/healthy-pantry/pull/1
     tasks_done: ["1.1", "1.2"]
     notes: >
       ./gradlew build and ./gradlew test both pass. Instrumented smoke test compiles/packages
-      but not executed (no emulator in sandbox). Bounded review started via `gentle-ai review
-      start` (lineage review-ab04fbdab836207d, risk medium, lens review-reliability,
-      changed_files 2, changed_lines 52) but not yet finalized before Engram disconnected.
+      but not executed (no emulator in sandbox). gentle-ai review CLI misreported diff scope
+      (2/52 vs actual 58 files/1357 lines) and errored on lineage state - bypassed per user
+      decision; review-reliability subagent lens found zero blocking findings instead.
+      Squash-merged to dev, branch deleted.
   - pr: 2
     work_unit: "Core domain - MeasurementUnit + UnitConverter"
     branch: feat/core-unit-conversion
