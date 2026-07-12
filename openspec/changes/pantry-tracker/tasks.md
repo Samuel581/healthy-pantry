@@ -57,7 +57,15 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
 - [x] 4.1 RED/GREEN `ComputeProjectedStockUseCase` (spec: Projected vs Actual Stock).
 
 ## Phase 5: Nutrition Lookup (PR5)
+
+> Split in progress to stay under the ~400-450 line review budget (see PR3 note above for why
+> this project now splits proactively instead of after the fact).
+
 - [ ] 5.1 RED/GREEN `NutritionLookupRepository`, OFF/USDA Retrofit sources, fallback+manualOverride (spec: Barcode Scan, Manual Entry with USDA Fallback).
+  - [x] 5.1a Open Food Facts client: `OpenFoodFactsApi` Retrofit interface, `OffProductResponse`/`OffProduct`/`OffNutriments` DTOs, `OpenFoodFactsNutritionSource` (DTO -> shared `NutritionResult` mapping, barcode-miss -> `NutritionLookupError.NotFound`, no auto-USDA-guess per spec scenario "Barcode not found in Open Food Facts"), `NutritionNetworkModule` Hilt wiring, RED/GREEN MockWebServer tests (`OpenFoodFactsNutritionSourceTest`, spec scenario "Successful barcode scan and OFF lookup"). Also added shared `NutritionResult`/`NutritionSource`/`NutritionLookupError` domain types (`feature/nutrition/domain/model`) and the `mockwebserver` test dependency. Landed on branch `feat/nutrition-lookup` — diff ~272 lines.
+  - [ ] 5.1b USDA FoodData Central client: `UsdaApi` Retrofit interface + DTOs (name search, macros) in `feature/nutrition/data/usda`, reading `BuildConfig.USDA_FDC_API_KEY`; `UsdaNutritionSource` mapping to `NutritionResult`; must distinguish `NutritionLookupError.RateLimited` from `NotFound` (spec scenario "USDA API key not configured") and cover manual name-search (spec scenario "Manual name search against USDA FoodData Central"). RED/GREEN MockWebServer tests. **Not started.**
+  - [ ] 5.1c `NutritionLookupRepository` interface + `NutritionLookupRepositoryImpl` in `feature/nutrition/data` composing OFF (barcode) and USDA (manual name-search) sources per the fallback rule above; Hilt binding module. RED/GREEN tests covering the composition (barcode hit, barcode miss surfaces as a distinct not-found rather than auto-querying USDA, name-search delegates to USDA). **Not started**, depends on 5.1b.
+  - Manual-override precedence (spec scenario "Manual macro override always wins") is a `FoodItem`/form concern, not the repository's — it belongs in PR6 (`ItemFormScreen`/`PantryViewModel`), not here.
 
 ## Phase 6: Pantry UI (PR6)
 - [ ] 6.1 `PantryViewModel`+tests; `PantryListScreen`, `ItemFormScreen` (Code Scanner + manual + USDA search) + compose tests.
