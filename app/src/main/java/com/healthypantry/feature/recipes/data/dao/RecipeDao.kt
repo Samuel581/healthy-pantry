@@ -33,5 +33,5 @@ interface RecipeDao {
      */
     @Transaction
     @Query("SELECT * FROM recipe WHERE id = :id")
-    fun observeRecipeWithIngredients(id: Long): Flow<RecipeWithIngredientsEntity?>
+    fun observeRecipeWithIngredients(id: Long): Flow<RecipeWithIngredientsRelation?>
 }

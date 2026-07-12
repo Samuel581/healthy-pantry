@@ -7,9 +7,12 @@ import com.healthypantry.core.database.AppDatabase
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.pantry.data.entity.FoodItemEntity
 import com.healthypantry.feature.pantry.domain.model.FoodItemSource
+import com.healthypantry.feature.recipes.data.dao.RecipeIngredientDao
+import com.healthypantry.feature.recipes.data.entity.RecipeIngredientEntity
 import com.healthypantry.feature.recipes.domain.model.Recipe
 import com.healthypantry.feature.recipes.domain.model.RecipeIngredient
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -55,7 +58,7 @@ class RecipeRepositoryTest {
             ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java,
         ).allowMainThreadQueries().build()
-        repository = RecipeRepositoryImpl(database.recipeDao(), database.recipeIngredientDao(), testDispatcherProvider)
+        repository = RecipeRepositoryImpl(database, database.recipeDao(), database.recipeIngredientDao(), testDispatcherProvider)
 
         riceId = database.foodItemDao().insert(foodItem("Rice"))
         chickenId = database.foodItemDao().insert(foodItem("Chicken"))
@@ -143,5 +146,75 @@ class RecipeRepositoryTest {
 
         assertTrue(repository.observeAll().first().isEmpty())
         assertNull(repository.observeRecipeWithIngredients(recipeId).first())
+    }
+
+    @Test
+    fun `upsertRecipeWithIngredients on edit rolls back the delete when insertAll fails`() = runTest {
+        // GIVEN a persisted recipe with one ingredient
+        val recipeId = repository.upsertRecipeWithIngredients(
+            bowlRecipe(),
+            listOf(RecipeIngredient(recipeId = 0, foodItemId = riceId, quantity = 200.0, unit = MeasurementUnit.GRAM, sortOrder = 0)),
+        )
+        val failingRepository = RecipeRepositoryImpl(
+            database,
+            database.recipeDao(),
+            insertAllThrowingDao(database.recipeIngredientDao()),
+            testDispatcherProvider,
+        )
+
+        // WHEN the edit's insertAll fails after the previous ingredients were deleted
+        var thrown: Throwable? = null
+        try {
+            failingRepository.upsertRecipeWithIngredients(
+                bowlRecipe().copy(id = recipeId, servings = 4),
+                listOf(RecipeIngredient(recipeId = recipeId, foodItemId = chickenId, quantity = 300.0, unit = MeasurementUnit.GRAM, sortOrder = 0)),
+            )
+        } catch (e: IllegalStateException) {
+            thrown = e
+        }
+        assertTrue(thrown is IllegalStateException)
+
+        // THEN the transaction rolled back: the original ingredient is still intact
+        val withIngredients = repository.observeRecipeWithIngredients(recipeId).first()
+        assertEquals(2, withIngredients?.recipe?.servings)
+        assertEquals(1, withIngredients?.ingredients?.size)
+        assertEquals("Rice", withIngredients?.ingredients?.first()?.foodItem?.name)
+    }
+
+    @Test
+    fun `observeRecipeWithIngredients returns ingredients by sortOrder even after an out-of-order update`() = runTest {
+        // GIVEN a recipe persisted with Rice (sortOrder 0) then Chicken (sortOrder 1)
+        val recipeId = repository.upsertRecipeWithIngredients(
+            bowlRecipe(),
+            listOf(
+                RecipeIngredient(recipeId = 0, foodItemId = riceId, quantity = 200.0, unit = MeasurementUnit.GRAM, sortOrder = 0),
+                RecipeIngredient(recipeId = 0, foodItemId = chickenId, quantity = 150.0, unit = MeasurementUnit.GRAM, sortOrder = 1),
+            ),
+        )
+        val rice = database.recipeIngredientDao().observeForRecipe(recipeId).first().first { it.foodItemId == riceId }
+        val chicken = database.recipeIngredientDao().observeForRecipe(recipeId).first().first { it.foodItemId == chickenId }
+
+        // WHEN a single ingredient's sortOrder is swapped in place (not by re-inserting)
+        database.recipeIngredientDao().update(rice.copy(sortOrder = 1))
+        database.recipeIngredientDao().update(chicken.copy(sortOrder = 0))
+
+        // THEN the relation still returns ingredients ordered by sortOrder, not insertion order
+        val withIngredients = repository.observeRecipeWithIngredients(recipeId).first()
+        assertEquals(
+            listOf("Chicken", "Rice"),
+            withIngredients?.ingredients?.map { it.foodItem.name },
+        )
+    }
+
+    /** Delegates every call to [delegate] except [insertAll], which always throws. */
+    private fun insertAllThrowingDao(delegate: RecipeIngredientDao) = object : RecipeIngredientDao {
+        override suspend fun insert(ingredient: RecipeIngredientEntity) = delegate.insert(ingredient)
+        override suspend fun insertAll(ingredients: List<RecipeIngredientEntity>): List<Long> =
+            throw IllegalStateException("forced insertAll failure")
+        override suspend fun update(ingredient: RecipeIngredientEntity) = delegate.update(ingredient)
+        override suspend fun delete(ingredient: RecipeIngredientEntity) = delegate.delete(ingredient)
+        override suspend fun deleteAllForRecipe(recipeId: Long) = delegate.deleteAllForRecipe(recipeId)
+        override fun observeForRecipe(recipeId: Long): Flow<List<RecipeIngredientEntity>> =
+            delegate.observeForRecipe(recipeId)
     }
 }

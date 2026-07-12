@@ -1,8 +1,8 @@
 package com.healthypantry.feature.recipes.data.repo
 
 import com.healthypantry.feature.pantry.data.repo.toDomain
-import com.healthypantry.feature.recipes.data.dao.RecipeIngredientWithFoodItemEntity
-import com.healthypantry.feature.recipes.data.dao.RecipeWithIngredientsEntity
+import com.healthypantry.feature.recipes.data.dao.RecipeIngredientWithFoodItemRelation
+import com.healthypantry.feature.recipes.data.dao.RecipeWithIngredientsRelation
 import com.healthypantry.feature.recipes.data.entity.RecipeEntity
 import com.healthypantry.feature.recipes.data.entity.RecipeIngredientEntity
 import com.healthypantry.feature.recipes.domain.model.Recipe
@@ -44,13 +44,16 @@ internal fun RecipeIngredient.toEntity(): RecipeIngredientEntity = RecipeIngredi
     sortOrder = sortOrder,
 )
 
-internal fun RecipeIngredientWithFoodItemEntity.toDomain(): RecipeIngredientDetail =
+internal fun RecipeIngredientWithFoodItemRelation.toDomain(): RecipeIngredientDetail =
     RecipeIngredientDetail(
         ingredient = ingredient.toDomain(),
         foodItem = foodItem.toDomain(),
     )
 
-internal fun RecipeWithIngredientsEntity.toDomain(): RecipeWithIngredients = RecipeWithIngredients(
+internal fun RecipeWithIngredientsRelation.toDomain(): RecipeWithIngredients = RecipeWithIngredients(
     recipe = recipe.toDomain(),
-    ingredients = ingredients.map { it.toDomain() },
+    // Room's @Relation has no orderBy — it does not guarantee row order, so the entered-order
+    // contract (RecipeWithIngredients.ingredients KDoc) must be enforced here, not left to
+    // whatever order the underlying query happens to return.
+    ingredients = ingredients.map { it.toDomain() }.sortedBy { it.ingredient.sortOrder },
 )

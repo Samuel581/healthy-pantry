@@ -1,5 +1,6 @@
 package com.healthypantry.feature.planning.data.dao
 
+import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.healthypantry.core.database.AppDatabase
@@ -18,6 +19,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -165,5 +167,31 @@ class PlanEntryDaoTest {
         dao.delete(stored)
 
         assertTrue(dao.observeWeek(monday, monday).first().isEmpty())
+    }
+
+    @Test
+    fun `deleting a recipe still referenced by a plan entry is rejected`() {
+        assertThrows(SQLiteConstraintException::class.java) {
+            runBlocking {
+                dao.insert(recipeAssignment(monday, MealSlot.DINNER))
+                database.recipeDao().delete(
+                    database.recipeDao().observeById(bowlId).first()!!,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `deleting a food item still referenced by an eaten plan entry is rejected`() {
+        assertThrows(SQLiteConstraintException::class.java) {
+            runBlocking {
+                val id = dao.insert(itemQuickAdd(tuesday, MealSlot.BREAKFAST))
+                dao.markEaten(id, Instant.parse("2026-07-13T19:00:00Z").toEpochMilli())
+
+                database.foodItemDao().delete(
+                    database.foodItemDao().observeById(bananaId).first()!!,
+                )
+            }
+        }
     }
 }

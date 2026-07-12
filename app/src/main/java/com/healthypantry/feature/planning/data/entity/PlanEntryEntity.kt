@@ -17,11 +17,14 @@ import com.healthypantry.feature.recipes.data.entity.RecipeEntity
  * [com.healthypantry.feature.planning.domain.model.PlanEntry] by `feature/planning/data/repo`
  * mappers — never returned directly from a repository.
  *
- * `onDelete = CASCADE` for both FKs: a plan entry has no meaning once the recipe or item it
- * refers to is gone. design.md's Room Schema section doesn't specify `onDelete` for these two
- * FKs (unlike [com.healthypantry.feature.recipes.data.entity.RecipeIngredientEntity.foodItemId],
- * which is explicitly `RESTRICT`); CASCADE was chosen here to follow the rest of the schema's
- * no-orphan-row convention (see [com.healthypantry.feature.pantry.data.entity.StockBatchEntity]).
+ * `onDelete = RESTRICT` for both FKs: a [PlanEntryEntity] row with [eaten] == true is the user's
+ * actual historical consumption record, not disposable plan state — it must not be silently
+ * hard-deleted just because the recipe or item it refers to is later removed from the pantry/
+ * recipe book. This mirrors [com.healthypantry.feature.recipes.data.entity.RecipeIngredientEntity
+ * .foodItemId], which is explicitly `RESTRICT` for the same reason (a referenced row must not be
+ * silently deleted out from under it). Deleting a [RecipeEntity]/[FoodItemEntity] that still has
+ * any [PlanEntryEntity] referencing it — eaten or not — now throws a FK constraint violation
+ * instead of cascading; callers must explicitly clear/reassign plan entries first.
  */
 @Entity(
     tableName = "plan_entry",
@@ -30,13 +33,13 @@ import com.healthypantry.feature.recipes.data.entity.RecipeEntity
             entity = RecipeEntity::class,
             parentColumns = ["id"],
             childColumns = ["recipeId"],
-            onDelete = ForeignKey.CASCADE,
+            onDelete = ForeignKey.RESTRICT,
         ),
         ForeignKey(
             entity = FoodItemEntity::class,
             parentColumns = ["id"],
             childColumns = ["foodItemId"],
-            onDelete = ForeignKey.CASCADE,
+            onDelete = ForeignKey.RESTRICT,
         ),
     ],
     indices = [Index("dateEpochDay"), Index("recipeId"), Index("foodItemId")],

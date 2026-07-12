@@ -1,6 +1,8 @@
 package com.healthypantry.feature.recipes.data.repo
 
+import androidx.room.withTransaction
 import com.healthypantry.core.common.DispatcherProvider
+import com.healthypantry.core.database.AppDatabase
 import com.healthypantry.feature.recipes.data.dao.RecipeDao
 import com.healthypantry.feature.recipes.data.dao.RecipeIngredientDao
 import com.healthypantry.feature.recipes.domain.model.Recipe
@@ -46,6 +48,7 @@ interface RecipeRepository {
 }
 
 class RecipeRepositoryImpl @Inject constructor(
+    private val database: AppDatabase,
     private val recipeDao: RecipeDao,
     private val recipeIngredientDao: RecipeIngredientDao,
     private val dispatcherProvider: DispatcherProvider,
@@ -61,22 +64,28 @@ class RecipeRepositoryImpl @Inject constructor(
         recipe: Recipe,
         ingredients: List<RecipeIngredient>,
     ): Long = withContext(dispatcherProvider.io) {
-        val recipeId = if (recipe.id == 0L) {
-            recipeDao.insert(recipe.toEntity())
-        } else {
-            recipeDao.update(recipe.toEntity())
-            recipeIngredientDao.deleteAllForRecipe(recipe.id)
-            recipe.id
-        }
+        // The delete-then-insert replace must be atomic: if insertAll throws (or the coroutine is
+        // cancelled) between deleteAllForRecipe and insertAll, a plain sequence of DAO calls would
+        // leave the recipe with zero ingredients and no way to roll back. withTransaction wraps
+        // all three calls in one real Room/SQLite transaction so a failure rolls everything back.
+        database.withTransaction {
+            val recipeId = if (recipe.id == 0L) {
+                recipeDao.insert(recipe.toEntity())
+            } else {
+                recipeDao.update(recipe.toEntity())
+                recipeIngredientDao.deleteAllForRecipe(recipe.id)
+                recipe.id
+            }
 
-        val orderedEntities = ingredients.mapIndexed { index, ingredient ->
-            ingredient.copy(recipeId = recipeId, sortOrder = index).toEntity()
-        }
-        if (orderedEntities.isNotEmpty()) {
-            recipeIngredientDao.insertAll(orderedEntities)
-        }
+            val orderedEntities = ingredients.mapIndexed { index, ingredient ->
+                ingredient.copy(recipeId = recipeId, sortOrder = index).toEntity()
+            }
+            if (orderedEntities.isNotEmpty()) {
+                recipeIngredientDao.insertAll(orderedEntities)
+            }
 
-        recipeId
+            recipeId
+        }
     }
 
     override suspend fun delete(recipe: Recipe) = withContext(dispatcherProvider.io) {
