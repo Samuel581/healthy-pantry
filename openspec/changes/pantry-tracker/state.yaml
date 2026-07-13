@@ -41,3 +41,25 @@ apply_progress:
     work_unit: "Core domain - MeasurementUnit + UnitConverter"
     branch: feat/core-unit-conversion
     status: not_started
+  # NOTE: PR3-PR7 entries are missing here — this file was reconstructed from conversation
+  # record on 2026-07-12 (see header) and was never fully backfilled past PR2, even though
+  # tasks.md phases 3-7 are marked complete and their commits exist on `dev`/this branch's
+  # history. Not reconciled as part of this entry (out of scope for the PR8 bug-fix pass below).
+  - pr: 8
+    work_unit: "Planning + macro domain - weekly needs, macro rollup, mark-eaten use-cases"
+    branch: feat/planning-macro-domain
+    status: open_in_review
+    commit: 72dc420
+    pr_number: 13
+    tasks_done: ["8.1"]
+    notes: >
+      Two independent 4R review passes (risk + resilience) on PR #13 both surfaced the same two
+      correctness bugs, fixed in a follow-up commit on the same branch: (1) missing idempotency
+      guard in MarkPlanEntryEatenUseCase.execute allowing double-decrement of stock on a repeated
+      call for an already-eaten entry; (2) unguarded requestedServings/recipe.servings division
+      in three call sites producing Infinity/NaN (and, via StockBatchRepository.decrementForFoodItem's
+      no-overdraft clamp, wiping all stock) when Recipe.servings <= 0 — fixed once in the shared
+      IngredientConversion.convertScaledIngredient helper with a new UnitConversionError
+      .InvalidRecipeServings typed failure. New RED/GREEN tests added to
+      ComputeMacroTotalsUseCaseTest, ComputeWeeklyNeedsUseCaseTest, MarkPlanEntryEatenUseCaseTest.
+      Verified by manual trace only (no JDK/gradle in this sandbox).

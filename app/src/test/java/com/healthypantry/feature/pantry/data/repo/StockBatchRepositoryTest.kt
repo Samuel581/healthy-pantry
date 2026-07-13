@@ -133,4 +133,50 @@ class StockBatchRepositoryTest {
         assertEquals(1, batches.size)
         assertEquals(250.0, batches.first().quantity, 0.0001)
     }
+
+    @Test
+    fun `decrementForFoodItem consumes the oldest batch first and reduces its quantity`() = runTest {
+        // Given two batches, the older one large enough to absorb the whole decrement
+        repository.upsert(StockBatch(foodItemId = chickenBreastId, quantity = 500.0, addedAt = Instant.parse("2026-07-10T00:00:00Z")))
+        repository.upsert(StockBatch(foodItemId = chickenBreastId, quantity = 300.0, addedAt = Instant.parse("2026-07-12T00:00:00Z")))
+
+        // When 100g is decremented (spec "Mark-eaten decrements actual")
+        repository.decrementForFoodItem(chickenBreastId, 100.0)
+
+        // Then only the oldest batch is reduced; the newer one is untouched
+        assertEquals(700.0, repository.observeTotalOnHand(chickenBreastId).first(), 0.0001)
+        val batches = repository.observeForFoodItem(chickenBreastId).first()
+        assertEquals(2, batches.size)
+        assertEquals(400.0, batches.first().quantity, 0.0001)
+        assertEquals(300.0, batches[1].quantity, 0.0001)
+    }
+
+    @Test
+    fun `decrementForFoodItem deletes a batch once fully consumed and spills into the next oldest`() = runTest {
+        // Given an old, small batch and a newer, larger one
+        repository.upsert(StockBatch(foodItemId = chickenBreastId, quantity = 100.0, addedAt = Instant.parse("2026-07-10T00:00:00Z")))
+        repository.upsert(StockBatch(foodItemId = chickenBreastId, quantity = 300.0, addedAt = Instant.parse("2026-07-12T00:00:00Z")))
+
+        // When a 150g decrement exceeds the oldest batch's 100g
+        repository.decrementForFoodItem(chickenBreastId, 150.0)
+
+        // Then the oldest batch is deleted (not left at zero) and the remainder comes from the next
+        val batches = repository.observeForFoodItem(chickenBreastId).first()
+        assertEquals(1, batches.size)
+        assertEquals(250.0, batches.first().quantity, 0.0001)
+        assertEquals(250.0, repository.observeTotalOnHand(chickenBreastId).first(), 0.0001)
+    }
+
+    @Test
+    fun `decrementForFoodItem clamps to zero without going negative when the request exceeds on-hand stock`() = runTest {
+        // Given only 100g on hand
+        repository.upsert(StockBatch(foodItemId = chickenBreastId, quantity = 100.0, addedAt = Instant.parse("2026-07-12T00:00:00Z")))
+
+        // When 300g is requested (deliberate no-overdraft policy — no error type invented)
+        repository.decrementForFoodItem(chickenBreastId, 300.0)
+
+        // Then on-hand stock floors at zero rather than going negative
+        assertEquals(0.0, repository.observeTotalOnHand(chickenBreastId).first(), 0.0001)
+        assertEquals(0, repository.observeForFoodItem(chickenBreastId).first().size)
+    }
 }

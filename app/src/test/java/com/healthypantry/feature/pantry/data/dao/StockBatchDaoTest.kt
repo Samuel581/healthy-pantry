@@ -147,6 +147,18 @@ class StockBatchDaoTest {
     }
 
     @Test
+    fun `getForFoodItem is a one-shot FIFO-ordered read matching observeForFoodItem`() = runBlocking {
+        dao.insert(StockBatchEntity(foodItemId = chickenBreastId, quantity = 300.0, expiryDate = null, addedAt = Instant.parse("2026-07-12T00:00:00Z")))
+        dao.insert(StockBatchEntity(foodItemId = chickenBreastId, quantity = 500.0, expiryDate = null, addedAt = Instant.parse("2026-07-10T00:00:00Z")))
+
+        val batches = dao.getForFoodItem(chickenBreastId)
+
+        assertEquals(2, batches.size)
+        assertEquals(500.0, batches.first().quantity, 0.0001)
+        assertEquals(300.0, batches[1].quantity, 0.0001)
+    }
+
+    @Test
     fun `observeForFoodItem does not include batches for a different food item`() = runBlocking {
         val riceId = foodItemDao.insert(
             FoodItemEntity(

@@ -32,6 +32,8 @@ class ComputeProjectedStockUseCaseTest {
             throw NotImplementedError("not used by ComputeProjectedStockUseCaseTest")
         override suspend fun delete(batch: StockBatch): Unit =
             throw NotImplementedError("not used by ComputeProjectedStockUseCaseTest")
+        override suspend fun decrementForFoodItem(foodItemId: Long, amount: Double): Unit =
+            throw NotImplementedError("not used by ComputeProjectedStockUseCaseTest")
     }
 
     private val useCase = ComputeProjectedStockUseCase(FakeStockBatchRepository(totalOnHand = 500.0))
