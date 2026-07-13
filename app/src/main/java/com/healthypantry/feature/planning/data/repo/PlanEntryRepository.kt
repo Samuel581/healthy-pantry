@@ -21,11 +21,17 @@ interface PlanEntryRepository {
     suspend fun delete(entry: PlanEntry)
 
     /**
-     * Marks the entry [id] eaten at [eatenAt] (defaults to now). Moves its quantity out of
-     * projected deficit and into an actual-stock decrement (spec "Projected vs Actual Stock",
-     * scenario "Mark-eaten decrements actual").
+     * Marks the entry [id] eaten at [eatenAt] (defaults to now), **only if it is not already
+     * eaten** (atomic guard, see [PlanEntryDao.markEaten]). Moves its quantity out of projected
+     * deficit and into an actual-stock decrement (spec "Projected vs Actual Stock", scenario
+     * "Mark-eaten decrements actual").
+     *
+     * @return the number of rows affected: 1 if this call flipped the entry to eaten, 0 if it was
+     * already eaten. Callers (see
+     * [com.healthypantry.feature.planning.domain.usecase.MarkPlanEntryEatenUseCase]) must only
+     * decrement stock when this returns 1.
      */
-    suspend fun markEaten(id: Long, eatenAt: Instant = Instant.now())
+    suspend fun markEaten(id: Long, eatenAt: Instant = Instant.now()): Int
 }
 
 class PlanEntryRepositoryImpl @Inject constructor(
@@ -49,7 +55,7 @@ class PlanEntryRepositoryImpl @Inject constructor(
         planEntryDao.delete(entry.toEntity())
     }
 
-    override suspend fun markEaten(id: Long, eatenAt: Instant) = withContext(dispatcherProvider.io) {
+    override suspend fun markEaten(id: Long, eatenAt: Instant): Int = withContext(dispatcherProvider.io) {
         planEntryDao.markEaten(id, eatenAt.toEpochMilli())
     }
 }

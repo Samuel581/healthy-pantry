@@ -148,15 +148,38 @@ class PlanEntryDaoTest {
         val untouchedId = dao.insert(itemQuickAdd(tuesday, MealSlot.BREAKFAST))
         val eatenAtMillis = Instant.parse("2026-07-13T19:00:00Z").toEpochMilli()
 
-        dao.markEaten(eatenId, eatenAtMillis)
+        val affectedRows = dao.markEaten(eatenId, eatenAtMillis)
 
         val eaten = dao.observeWeek(monday, tuesday).first().first { it.id == eatenId }
         val untouched = dao.observeWeek(monday, tuesday).first().first { it.id == untouchedId }
+        assertEquals(1, affectedRows)
         assertTrue(eaten.eaten)
         assertEquals(eatenAtMillis, eaten.eatenAt)
         assertNotNull(untouched)
         assertEquals(false, untouched.eaten)
         assertNull(untouched.eatenAt)
+    }
+
+    @Test
+    fun `markEaten on an already-eaten entry affects zero rows and does not overwrite eatenAt`() = runBlocking {
+        // GIVEN an entry already marked eaten once (the atomic guard this proves: two concurrent
+        // UPDATEs for the same id can never both affect a row, since SQLite/Room serializes
+        // writers - see MarkPlanEntryEatenUseCase's reliance on this return value)
+        val id = dao.insert(recipeAssignment(monday, MealSlot.DINNER))
+        val firstEatenAtMillis = Instant.parse("2026-07-13T19:00:00Z").toEpochMilli()
+        val firstAffectedRows = dao.markEaten(id, firstEatenAtMillis)
+
+        // WHEN markEaten is called again for the same id (double-tap / concurrent call)
+        val secondEatenAtMillis = Instant.parse("2026-07-13T20:00:00Z").toEpochMilli()
+        val secondAffectedRows = dao.markEaten(id, secondEatenAtMillis)
+
+        // THEN the first call affected exactly one row, the second affected zero, and the
+        // original eatenAt from the first call is left untouched
+        assertEquals(1, firstAffectedRows)
+        assertEquals(0, secondAffectedRows)
+        val stored = dao.observeWeek(monday, monday).first().first { it.id == id }
+        assertTrue(stored.eaten)
+        assertEquals(firstEatenAtMillis, stored.eatenAt)
     }
 
     @Test

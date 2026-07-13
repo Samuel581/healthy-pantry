@@ -260,6 +260,30 @@ class MarkPlanEntryEatenUseCaseTest {
         assertEquals(200.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
     }
 
+    @Test
+    fun `two calls both built from the same stale (eaten=false) entry snapshot only decrement stock once`() = runTest {
+        // GIVEN a planned entry of 300g Rice for today, and 500g Rice actually on hand. Both calls
+        // below reuse the exact same `staleEntry` value (entry.eaten == false), simulating a
+        // double-tap on "Mark eaten" where the second invocation fires before the first write's
+        // result has propagated back into the UI's own PlanEntry snapshot - the class-level
+        // `if (entry.eaten) return` fast-path guard cannot see this on its own, since it only
+        // inspects the caller-supplied entry, never the DB. This is the scenario the DB-layer
+        // atomic guard (PlanEntryDao.markEaten's conditional UPDATE ... WHERE eaten = 0) closes.
+        addStock(riceId, 500.0)
+        val id = insertEntry(PlanEntry(dateEpochDay = 1, mealSlot = MealSlot.LUNCH, type = PlanEntryType.ITEM, foodItemId = riceId, quantity = 300.0))
+        val staleEntry = PlanEntry(id = id, dateEpochDay = 1, mealSlot = MealSlot.LUNCH, type = PlanEntryType.ITEM, foodItemId = riceId, quantity = 300.0)
+
+        // WHEN both calls execute using the identical stale (eaten=false) snapshot
+        val firstResult = useCase.execute(staleEntry, Instant.parse("2026-07-13T12:00:00Z"))
+        val secondResult = useCase.execute(staleEntry, Instant.parse("2026-07-13T12:00:01Z"))
+
+        // THEN both calls succeed, but stock is decremented only once: the DB, not each call's
+        // identically-stale in-memory snapshot, is what gates the decrement
+        assertTrue(firstResult is Result.Success)
+        assertTrue(secondResult is Result.Success)
+        assertEquals(200.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
+    }
+
     private suspend fun insertEntry(entry: PlanEntry): Long = database.planEntryDao().insert(
         com.healthypantry.feature.planning.data.entity.PlanEntryEntity(
             dateEpochDay = entry.dateEpochDay,
