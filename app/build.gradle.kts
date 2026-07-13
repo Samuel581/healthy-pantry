@@ -33,7 +33,9 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Custom runner (Phase 11) swaps in HiltTestApplication for @HiltAndroidTest instrumented
+        // tests (e.g. AppNavigationSmokeTest); see app/src/androidTest/.../HiltTestRunner.kt.
+        testInstrumentationRunner = "com.healthypantry.HiltTestRunner"
 
         buildConfigField("String", "USDA_FDC_API_KEY", "\"$usdaFdcApiKey\"")
     }
@@ -81,6 +83,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
+
+    // Navigation (Phase 11: nav graph + bottom nav)
+    implementation(libs.androidx.navigation.compose)
 
     // Compose (versions aligned via BOM)
     implementation(platform(libs.androidx.compose.bom))
@@ -130,4 +135,8 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    // Hilt testing (Phase 11 e2e smoke test): @HiltAndroidTest + @TestInstallIn in-memory
+    // AppDatabase (see app/src/androidTest/.../di/TestDatabaseModule.kt).
+    androidTestImplementation(libs.google.hilt.android.testing)
+    kspAndroidTest(libs.google.hilt.compiler)
 }

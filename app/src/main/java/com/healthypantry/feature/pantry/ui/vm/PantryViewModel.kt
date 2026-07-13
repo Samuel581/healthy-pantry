@@ -64,6 +64,16 @@ data class PantryUiState(
  * from a shared repository-level cache instead of two independent per-screen computations), this
  * should be revisited instead of adding a second independent computation of the same map here.
  *
+ * Phase 11 (nav/integration) note: still not closed. The Pantry and Plan tabs are sibling
+ * top-level bottom-nav destinations with independent (save/restore-state) back stacks, not nested
+ * under one shared parent nav-graph entry — so there is no single [androidx.navigation.NavBackStackEntry]
+ * to scope a shared ViewModel to the way `ItemFormScreen`+`PantryListScreen` share the Pantry
+ * graph. The only real wiring point would be an Activity-scoped shared component (or a new
+ * repository-level cache) reproducing `PlanViewModel.resolveWeeklyNeeds`'s reactive resolution,
+ * which is exactly the cross-feature-dependency/duplication cost already flagged above — adding
+ * navigation didn't create a smaller version of that problem, so it's left deferred rather than
+ * forced in here.
+ *
  * `PlanEntry` (meal-planning) does not exist yet (PR7/PR8), so this ViewModel always passes a
  * committed quantity of `0.0` into [ComputeProjectedStockUseCase.compute] — projected stock
  * equals actual stock until this TODO above is picked up.
