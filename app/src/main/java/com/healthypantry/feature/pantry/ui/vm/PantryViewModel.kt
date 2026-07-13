@@ -48,9 +48,25 @@ data class PantryUiState(
  * Joins [FoodItemRepository.observeAll] with each item's actual stock and projected stock into
  * a single [uiState] for `feature/pantry/ui/screen` Compose screens (PR6).
  *
+ * TODO(PR9 follow-up, not closed in this PR): `committedQuantity` below is still hardcoded to
+ * `0.0` — projected stock still equals actual stock. A real source now exists:
+ * `com.healthypantry.feature.planning.ui.vm.PlanViewModel.uiState.weeklyNeeds` already computes
+ * the `FoodItemId -> committed quantity` map for the current week via
+ * [ComputeWeeklyNeedsUseCase][com.healthypantry.feature.planning.domain.usecase.ComputeWeeklyNeedsUseCase].
+ * Wiring it in here was deliberately left out of PR9 rather than forced in: it would make this
+ * ViewModel depend on `PlanEntryRepository`/`RecipeRepository`/`UnitConversionRepository` (a
+ * pantry-feature ViewModel reaching into planning/recipes), plus reactively re-resolve every
+ * referenced recipe's ingredients and every referenced item's conversion factors per pantry row
+ * (the same one-shot-`.first()`-per-recipe resolution `PlanViewModel.resolveWeeklyNeeds` already
+ * does) — a meaningful scope/complexity increase for a Phase 9 UI task, and a cross-feature
+ * dependency this ViewModel doesn't otherwise have. Once nav/integration (Phase 11) exists and a
+ * shared "current week needs" source is decided (e.g. hoisted above both ViewModels, or read
+ * from a shared repository-level cache instead of two independent per-screen computations), this
+ * should be revisited instead of adding a second independent computation of the same map here.
+ *
  * `PlanEntry` (meal-planning) does not exist yet (PR7/PR8), so this ViewModel always passes a
  * committed quantity of `0.0` into [ComputeProjectedStockUseCase.compute] — projected stock
- * equals actual stock until PR8 wires a real commitment source in here.
+ * equals actual stock until this TODO above is picked up.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel

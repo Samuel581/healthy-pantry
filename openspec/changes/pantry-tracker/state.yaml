@@ -63,3 +63,23 @@ apply_progress:
       .InvalidRecipeServings typed failure. New RED/GREEN tests added to
       ComputeMacroTotalsUseCaseTest, ComputeWeeklyNeedsUseCaseTest, MarkPlanEntryEatenUseCaseTest.
       Verified by manual trace only (no JDK/gradle in this sandbox).
+  - pr: 9
+    work_unit: "Planning UI - RecipeViewModel/RecipeScreen, PlanViewModel/WeekPlanScreen"
+    branch: feat/planning-ui
+    status: implemented_pending_review
+    tasks_done: ["9.1"]
+    notes: >
+      RecipeViewModel+RecipeScreen (list/create/edit/delete recipes with ordered ingredient
+      lists) and PlanViewModel+WeekPlanScreen (assign a recipe or quick-add a FoodItem to a
+      day/MealSlot, mark-eaten) added under feature/recipes/ui and feature/planning/ui.
+      PlanViewModel is the first production caller of MarkPlanEntryEatenUseCase and wires
+      ComputeWeeklyNeedsUseCase's committed-quantity map into its own uiState.weeklyNeeds.
+      PantryViewModel's committedQuantity=0.0 stock stub was traced but deliberately left as a
+      documented TODO rather than closed in this PR — see tasks.md 9.1 note for the full
+      rationale (cross-feature dependency + duplicated reactive resolution, deferred to Phase 11).
+      RecipeViewModelTest uses hand-written fakes (PantryViewModelTest convention);
+      PlanViewModelTest deviates to a real in-memory Room AppDatabase (Robolectric) because
+      MarkPlanEntryEatenUseCase needs a real AppDatabase.withTransaction that cannot be
+      hand-faked (mirrors MarkPlanEntryEatenUseCaseTest's own fixture). Compose tests for both
+      screens compile/package only, no emulator in this sandbox. Verified by manual trace only
+      (no JDK/gradle in this sandbox) — not yet committed/reviewed.

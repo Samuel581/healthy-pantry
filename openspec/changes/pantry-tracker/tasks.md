@@ -126,7 +126,39 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
     `ComputeWeeklyNeedsUseCaseTest`, and `MarkPlanEntryEatenUseCaseTest` for both fixes.
 
 ## Phase 9: Planning UI (PR9)
-- [ ] 9.1 `RecipeViewModel`+`RecipeScreen`; `PlanViewModel`+`WeekPlanScreen` (assign/quick-add/mark-eaten) + compose tests.
+- [x] 9.1 `RecipeViewModel`+`RecipeScreen`; `PlanViewModel`+`WeekPlanScreen` (assign/quick-add/mark-eaten) + compose tests.
+  - Landed on branch `feat/planning-ui` (cut from `dev`, includes Phase 7/8 data+domain history).
+  - `RecipeViewModel` (`feature/recipes/ui/vm`) joins `RecipeRepository.observeAll`/
+    `FoodItemRepository.observeAll` into `uiState`, plus a separate `formState` for create/edit
+    (unlike the pantry slice's two-ViewModel split — `RecipeIngredient` has no independent
+    lifecycle apart from its owning `Recipe`, so one ViewModel owns both list and form).
+    `RecipeScreen` (Compose) toggles between list/form modes internally (no nav wiring, same
+    precedent as `ItemFormScreen` having none yet). `RecipeViewModelTest`: hand-written fakes, no
+    mocking framework (same convention as `PantryViewModelTest`).
+  - `PlanViewModel` (`feature/planning/ui/vm`) is the first production caller of
+    `MarkPlanEntryEatenUseCase` (`markEaten`) and wires `ComputeWeeklyNeedsUseCase`'s
+    `FoodItemId -> committed quantity` output into `uiState.weeklyNeeds` via a one-shot
+    `.first()`-per-recipe resolution (`resolveWeeklyNeeds`, mirroring
+    `MarkPlanEntryEatenUseCase.execute`'s own one-shot resolution pattern). Also assigns a
+    recipe or quick-adds a raw `FoodItem` to a day/`MealSlot` (`assignRecipe`/`quickAddItem`).
+    New `WeekRange`/`currentWeekRange` helper (Monday-Sunday, UI-layer only) computes "this
+    week"'s epoch-day bounds for `PlanEntryRepository.observeWeek`. `WeekPlanScreen` (Compose)
+    shows the week's entries with assign/quick-add form + mark-eaten/delete actions.
+    `PlanViewModelTest` deliberately deviates from the hand-written-fake convention: exercised
+    against a real in-memory Room `AppDatabase` (Robolectric) with every real repository/use-case
+    implementation, because `MarkPlanEntryEatenUseCase` needs a real `AppDatabase.withTransaction`
+    that cannot be hand-faked — mirrors `MarkPlanEntryEatenUseCaseTest`'s own fixture instead
+    (same convention this project already uses wherever a component needs a real DB).
+  - `PantryViewModel`'s `committedQuantity = 0.0` stock-projection stub (documented since PR6) was
+    traced but deliberately **left as a documented TODO, not closed**: `PlanViewModel.uiState
+    .weeklyNeeds` is a real source now, but wiring it into `PantryViewModel` would add a
+    pantry-feature dependency on `PlanEntryRepository`/`RecipeRepository`/`UnitConversionRepository`
+    and duplicate `resolveWeeklyNeeds`'s reactive resolution per pantry row — a scope increase
+    beyond this UI task, revisited at Phase 11 once nav/integration exists and a single shared
+    "current week needs" source is decided instead of two independent per-screen computations.
+  - Compose tests (`RecipeScreenTest`, `WeekPlanScreenTest`) compile/package only, no emulator in
+    this sandbox — same precedent as PR6's `PantryListScreenTest`/`ItemFormScreenTest`.
+  - Verified by manual trace only (no JDK/gradle in this sandbox).
 
 ## Phase 10: Expiry Reminders (PR10)
 - [ ] 10.1 RED/GREEN `ExpiryCheckWorker` (WorkManager TestDriver), notification channel, POST_NOTIFICATIONS request, `ExpiryAlertRepository`, in-app banner/badge (spec: Expiry Notification Scheduling).
