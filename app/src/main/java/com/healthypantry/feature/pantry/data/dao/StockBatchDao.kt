@@ -39,4 +39,13 @@ interface StockBatchDao {
      */
     @Query("SELECT COALESCE(SUM(quantity), 0.0) FROM stock_batch WHERE foodItemId = :foodItemId")
     fun observeTotalOnHand(foodItemId: Long): Flow<Double>
+
+    /**
+     * Every batch with a non-null expiry date, across all food items — the candidate set
+     * [com.healthypantry.feature.expiry.data.repo.ExpiryAlertRepository] filters down to the
+     * lookahead window (spec "Expiry Notification Scheduling"). Batches without an expiry date
+     * can never be alert candidates and are excluded here rather than filtered later.
+     */
+    @Query("SELECT * FROM stock_batch WHERE expiryDate IS NOT NULL")
+    fun observeBatchesWithExpiry(): Flow<List<StockBatchEntity>>
 }

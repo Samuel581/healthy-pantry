@@ -161,7 +161,57 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
   - Verified by manual trace only (no JDK/gradle in this sandbox).
 
 ## Phase 10: Expiry Reminders (PR10)
-- [ ] 10.1 RED/GREEN `ExpiryCheckWorker` (WorkManager TestDriver), notification channel, POST_NOTIFICATIONS request, `ExpiryAlertRepository`, in-app banner/badge (spec: Expiry Notification Scheduling).
+- [x] 10.1 RED/GREEN `ExpiryCheckWorker` (WorkManager TestDriver), notification channel, POST_NOTIFICATIONS request, `ExpiryAlertRepository`, in-app banner/badge (spec: Expiry Notification Scheduling).
+  - Landed on branch `feat/expiry-reminders` (cut from `dev`).
+  - `ExpiryAlertRepository`/`ExpiryAlertRepositoryImpl` (`feature/expiry/data/repo`) adds
+    `StockBatchDao.observeBatchesWithExpiry()` (`WHERE expiryDate IS NOT NULL`) and joins it
+    reactively with `FoodItemDao.observeAll()`, categorizing each batch as `EXPIRING_SOON`
+    (`expiryDate <= today + lookaheadDays`, default 3) or `EXPIRED` (`expiryDate < today`) via a
+    new injectable `java.time.Clock` (`core/common/di/ClockModule`, testable via `Clock.fixed`
+    instead of `Clock.systemDefaultZone()`). Both `ExpiryCheckWorker` and
+    `ExpiryAlertViewModel`/`ExpiryBanner` read this one repository, so the system notification and
+    the in-app fallback always agree (spec "Notification-Denied Fallback").
+  - `ExpiryCheckWorker` (`@HiltWorker` `CoroutineWorker`, `feature/expiry/worker`) does a one-shot
+    `.first()` read per run and calls `ExpiryNotifier.notifyExpiringItems` only when the list is
+    non-empty; `ExpiryNotifier`/`SystemExpiryNotifier` (`feature/expiry/notification`) posts a
+    `NotificationCompat` summary notification, guarded by a `POST_NOTIFICATIONS`
+    `checkSelfPermission` check on API 33+ (silently no-ops instead of the `SecurityException`
+    `NotificationManagerCompat.notify` would otherwise throw when denied).
+  - `HealthyPantryApp` now implements `Configuration.Provider` (supplies `HiltWorkerFactory` so
+    the `@HiltWorker` worker's DI-supplied dependencies resolve), creates the notification channel
+    in `onCreate` (no version guard needed — minSdk 26 already covers `NotificationChannel`), and
+    schedules `ExpiryCheckWorker.periodicRequest()` (1-day interval) via
+    `enqueueUniquePeriodicWork(..., KEEP)`. `MainActivity` requests `POST_NOTIFICATIONS` once on
+    first composition on API 33+ if not already granted (`AndroidManifest.xml` declares the
+    permission). No nav/bottom-bar wiring added — out of scope, deferred to Phase 11 per this
+    task's own instruction.
+  - In-app banner: new `ExpiryAlertViewModel` (`feature/expiry/ui/vm`, separate `HiltViewModel`
+    from `PantryViewModel` — mirrors this project's existing "don't reach across feature
+    boundaries" convention documented on `PantryViewModel`'s own committed-quantity TODO) exposes
+    `uiState.expiringItems` from `ExpiryAlertRepository`; stateless `ExpiryBanner`
+    (`feature/expiry/ui`) renders it. Wired into `PantryListScreen`/`PantryListContent` (a second
+    `hiltViewModel()`, banner rendered above the list/loading/empty content, `expiringItems`
+    defaults to empty so the existing `PantryListScreenTest` call sites are unaffected).
+  - Tests: `ExpiryAlertRepositoryTest` (in-memory Room + Robolectric, same convention as
+    `StockBatchRepositoryTest` — needed for real DAO join/query behavior — with an injected
+    `Clock.fixed` pinning "today"); `ExpiryCheckWorkerTest` (Robolectric +
+    `androidx.work.testing.TestDriver.setPeriodDelayMet`, new `androidx.work:work-testing` test
+    dependency, hand-written fake `ExpiryAlertRepository`/`ExpiryNotifier` via a custom
+    `WorkerFactory` bypassing Hilt, asserting the notifier side effect per this task's own "or the
+    correct side effect" allowance); `ExpiryBannerTest` (Compose, compiles/packages only, no
+    emulator in this sandbox — same precedent as `PantryListScreenTest`).
+  - Verified by manual trace only (no JDK/gradle in this sandbox): traced
+    `ExpiryAlertRepositoryImpl`'s threshold/status branches against both spec scenarios (2-days-out
+    included as `EXPIRING_SOON`, 10-days-out excluded, boundary-exact-3-days included, past-date
+    included as `EXPIRED`), `ExpiryCheckWorker.doWork()`'s notify-only-when-non-empty branch, and
+    `SystemExpiryNotifier`'s permission-denied no-op path against the "Notification-Denied
+    Fallback" scenario.
+  - Diff size flagged for reviewer/orchestrator: ~904 changed lines (20 files) — noticeably above
+    this project's own ~400-450-line proactive-split precedent (see PR3/PR5/PR6 notes above). Not
+    split preemptively here because this task's instructions directed landing 10.1 as one
+    deliverable on `feat/expiry-reminders` and explicitly asked to flag size rather than decide
+    unilaterally; left to the reviewer/orchestrator to decide whether to split in review or accept
+    as `size:exception`.
 
 ## Phase 11: Integration (PR11)
 - [ ] 11.1 Nav graph + bottom nav, theme, schedule periodic worker; e2e smoke test; README USDA key docs.

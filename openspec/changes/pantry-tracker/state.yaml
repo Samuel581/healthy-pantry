@@ -83,3 +83,33 @@ apply_progress:
       hand-faked (mirrors MarkPlanEntryEatenUseCaseTest's own fixture). Compose tests for both
       screens compile/package only, no emulator in this sandbox. Verified by manual trace only
       (no JDK/gradle in this sandbox) — not yet committed/reviewed.
+  - pr: 10
+    work_unit: "Expiry reminders - ExpiryCheckWorker, notification channel, POST_NOTIFICATIONS, ExpiryAlertRepository, in-app banner"
+    branch: feat/expiry-reminders
+    status: implemented_pending_review
+    tasks_done: ["10.1"]
+    notes: >
+      ExpiryAlertRepository (feature/expiry/data/repo) adds StockBatchDao.observeBatchesWithExpiry
+      and joins it reactively with FoodItemDao.observeAll, categorizing EXPIRING_SOON (<=
+      today+lookaheadDays, default 3) vs EXPIRED (< today) via a new injectable java.time.Clock
+      (core/common/di/ClockModule). ExpiryCheckWorker (@HiltWorker CoroutineWorker,
+      feature/expiry/worker) reads it once per run and calls ExpiryNotifier only when non-empty;
+      SystemExpiryNotifier (feature/expiry/notification) posts a NotificationCompat summary,
+      guarded by a POST_NOTIFICATIONS checkSelfPermission check on API 33+ so a denial no-ops
+      instead of throwing SecurityException. HealthyPantryApp now implements
+      Configuration.Provider (HiltWorkerFactory), creates the notification channel, and schedules
+      the periodic worker (1-day interval, enqueueUniquePeriodicWork KEEP); MainActivity requests
+      POST_NOTIFICATIONS once on API 33+. In-app fallback: new ExpiryAlertViewModel +
+      ExpiryBanner wired into PantryListScreen/PantryListContent (second hiltViewModel(),
+      expiringItems defaults to empty so PantryListScreenTest is unaffected) — driven by the same
+      ExpiryAlertRepository, independent of the worker/permission, per spec
+      "Notification-Denied Fallback". Tests: ExpiryAlertRepositoryTest (in-memory Room +
+      Robolectric, Clock.fixed), ExpiryCheckWorkerTest (Robolectric +
+      androidx.work.testing.TestDriver.setPeriodDelayMet, new work-testing dependency,
+      hand-written fakes via a custom WorkerFactory bypassing Hilt), ExpiryBannerTest (Compose,
+      compile/package only, no emulator in this sandbox). Verified by manual trace only (no
+      JDK/gradle in this sandbox) — not yet committed/reviewed at state.yaml write time.
+      Diff size flagged: ~904 changed lines across 20 files, above this project's own
+      ~400-450-line proactive-split precedent (see PR3/PR5/PR6 notes in tasks.md) — not split
+      preemptively per this task's explicit instruction to flag rather than decide unilaterally;
+      left to reviewer/orchestrator to split or accept as size:exception.

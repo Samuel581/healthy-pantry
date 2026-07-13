@@ -1,5 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Runtime-requested on API 33+ (see MainActivity) for ExpiryCheckWorker's system
+         notification (spec "Expiry Notification Scheduling"). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".app.HealthyPantryApp"
         android:allowBackup="true"
