@@ -126,14 +126,48 @@ class ExpiryCheckWorkerTest {
         assertTrue(fakeNotifier.notifiedBatches.isEmpty())
     }
 
+    @Test
+    fun `worker retries instead of failing when the repository throws`() {
+        fakeRepository.shouldThrow = true
+
+        val request = ExpiryCheckWorker.periodicRequest()
+        workManager.enqueue(request).result.get()
+        val testDriver = requireNotNull(WorkManagerTestInitHelper.getTestDriver(context))
+        testDriver.setPeriodDelayMet(request.id)
+
+        val workInfo = workManager.getWorkInfoById(request.id).get()
+        assertEquals(WorkInfo.State.ENQUEUED, workInfo.state)
+        assertTrue(fakeNotifier.notifiedBatches.isEmpty())
+    }
+
+    @Test
+    fun `worker retries instead of failing when the notifier throws`() {
+        fakeRepository.result = listOf(sampleExpiringBatch())
+        fakeNotifier.shouldThrow = true
+
+        val request = ExpiryCheckWorker.periodicRequest()
+        workManager.enqueue(request).result.get()
+        val testDriver = requireNotNull(WorkManagerTestInitHelper.getTestDriver(context))
+        testDriver.setPeriodDelayMet(request.id)
+
+        val workInfo = workManager.getWorkInfoById(request.id).get()
+        assertEquals(WorkInfo.State.ENQUEUED, workInfo.state)
+    }
+
     private class FakeExpiryAlertRepository : ExpiryAlertRepository {
         var result: List<ExpiringBatch> = emptyList()
-        override fun observeExpiringSoon(lookaheadDays: Long): Flow<List<ExpiringBatch>> = flowOf(result)
+        var shouldThrow: Boolean = false
+        override fun observeExpiringSoon(lookaheadDays: Long): Flow<List<ExpiringBatch>> {
+            if (shouldThrow) throw IllegalStateException("boom")
+            return flowOf(result)
+        }
     }
 
     private class FakeExpiryNotifier : ExpiryNotifier {
         val notifiedBatches = mutableListOf<List<ExpiringBatch>>()
+        var shouldThrow: Boolean = false
         override fun notifyExpiringItems(items: List<ExpiringBatch>) {
+            if (shouldThrow) throw IllegalStateException("boom")
             notifiedBatches += items
         }
     }

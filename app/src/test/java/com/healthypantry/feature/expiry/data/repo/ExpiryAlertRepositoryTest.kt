@@ -134,6 +134,21 @@ class ExpiryAlertRepositoryTest {
     }
 
     @Test
+    fun `an expiry date of exactly today is still expiring soon, not expired`() = runTest {
+        // Boundary check for the EXPIRED vs EXPIRING_SOON split: `isBefore(today)` must be false
+        // for expiryDate == today, so a batch expiring today is EXPIRING_SOON rather than EXPIRED.
+        val breadId = addFoodItem("Bread")
+        stockBatchRepository.upsert(
+            StockBatch(foodItemId = breadId, quantity = 300.0, expiryDate = today, addedAt = Instant.EPOCH),
+        )
+
+        val expiring = repository.observeExpiringSoon(lookaheadDays = 3).first()
+
+        assertEquals(1, expiring.size)
+        assertEquals(ExpiryStatus.EXPIRING_SOON, expiring.first().status)
+    }
+
+    @Test
     fun `an already-past expiry date is flagged as expired rather than excluded`() = runTest {
         val milkId = addFoodItem("Milk")
         stockBatchRepository.upsert(
@@ -162,6 +177,24 @@ class ExpiryAlertRepositoryTest {
     fun `emits an empty list when no stock batches exist`() = runTest {
         val expiring = repository.observeExpiringSoon().first()
 
+        assertTrue(expiring.isEmpty())
+    }
+
+    @Test
+    fun `a batch fully consumed via decrementForFoodItem stops producing an expiring alert`() = runTest {
+        // Given a batch that would otherwise be flagged as expiring soon
+        val yogurtId = addFoodItem("Yogurt")
+        stockBatchRepository.upsert(
+            StockBatch(foodItemId = yogurtId, quantity = 500.0, expiryDate = today.plusDays(2), addedAt = Instant.EPOCH),
+        )
+        assertEquals(1, repository.observeExpiringSoon(lookaheadDays = 3).first().size)
+
+        // When the batch is fully consumed (spec "Mark-eaten decrements actual") — a fully
+        // consumed batch is deleted rather than left at zero quantity
+        stockBatchRepository.decrementForFoodItem(yogurtId, amount = 500.0)
+
+        // Then it no longer appears in the expiring-soon alert list
+        val expiring = repository.observeExpiringSoon(lookaheadDays = 3).first()
         assertTrue(expiring.isEmpty())
     }
 }

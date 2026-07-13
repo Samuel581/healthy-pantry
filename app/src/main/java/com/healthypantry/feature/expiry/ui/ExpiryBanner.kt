@@ -12,7 +12,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.healthypantry.feature.expiry.domain.model.ExpiringBatch
-import com.healthypantry.feature.expiry.domain.model.ExpiryStatus
+import com.healthypantry.feature.expiry.domain.model.displayLabel
 
 /**
  * Spec: Notification-Denied Fallback
@@ -43,7 +43,7 @@ fun ExpiryBanner(
             )
             expiringItems.forEach { item ->
                 Text(
-                    text = itemLabel(item),
+                    text = item.displayLabel(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
@@ -51,6 +51,3 @@ fun ExpiryBanner(
         }
     }
 }
-
-private fun itemLabel(item: ExpiringBatch): String =
-    if (item.status == ExpiryStatus.EXPIRED) "${item.foodItem.name} (expired)" else item.foodItem.name

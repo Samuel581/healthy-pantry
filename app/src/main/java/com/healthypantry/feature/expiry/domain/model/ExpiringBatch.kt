@@ -20,3 +20,13 @@ data class ExpiringBatch(
     val stockBatch: StockBatch,
     val status: ExpiryStatus,
 )
+
+/**
+ * Shared display label for a single [ExpiringBatch] — "<name> (expired)" once past due, otherwise
+ * just the food item name. Used by both the in-app banner
+ * ([com.healthypantry.feature.expiry.ui.ExpiryBanner]) and the system notification
+ * ([com.healthypantry.feature.expiry.notification.SystemExpiryNotifier]) so the two surfaces
+ * can't drift apart.
+ */
+fun ExpiringBatch.displayLabel(): String =
+    if (status == ExpiryStatus.EXPIRED) "${foodItem.name} (expired)" else foodItem.name

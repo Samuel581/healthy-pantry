@@ -10,6 +10,7 @@ import com.healthypantry.feature.expiry.data.repo.ExpiryAlertRepository
 import com.healthypantry.feature.expiry.notification.ExpiryNotifier
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
@@ -31,12 +32,20 @@ class ExpiryCheckWorker @AssistedInject constructor(
     private val expiryNotifier: ExpiryNotifier,
 ) : CoroutineWorker(context, params) {
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
         val expiringItems = expiryAlertRepository.observeExpiringSoon().first()
         if (expiringItems.isNotEmpty()) {
             expiryNotifier.notifyExpiringItems(expiringItems)
         }
-        return Result.success()
+        Result.success()
+    } catch (e: Exception) {
+        // A transient failure (e.g. a Room I/O hiccup) must not silently drop this day's check —
+        // Result.retry() lets WorkManager's default backoff policy reschedule instead of the
+        // implicit Result.failure() an uncaught exception out of doWork() would otherwise cause.
+        // CancellationException is rethrown (same convention as PantryViewModel.launchOnIo) so
+        // WorkManager cancelling this worker isn't mistaken for a real failure.
+        if (e is CancellationException) throw e
+        Result.retry()
     }
 
     companion object {

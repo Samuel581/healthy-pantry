@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.healthypantry.feature.expiry.domain.model.ExpiringBatch
 import com.healthypantry.feature.expiry.domain.model.ExpiryStatus
+import com.healthypantry.feature.expiry.domain.model.displayLabel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
@@ -40,6 +41,12 @@ class SystemExpiryNotifier @Inject constructor(
             .setStyle(NotificationCompat.BigTextStyle().bigText(contentText(items)))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
+            // The daily worker re-notifies on the same EXPIRY_NOTIFICATION_ID as long as an
+            // expired/expiring batch remains unresolved (by design - see ExpiryAlertRepository).
+            // Without this, every daily run re-triggers sound/vibration for an item the user
+            // already saw and hasn't acted on; setOnlyAlertOnce makes repeat notify() calls
+            // update the content silently instead.
+            .setOnlyAlertOnce(true)
             .build()
 
         NotificationManagerCompat.from(context).notify(EXPIRY_NOTIFICATION_ID, notification)
@@ -58,9 +65,7 @@ class SystemExpiryNotifier @Inject constructor(
     }
 
     private fun contentText(items: List<ExpiringBatch>): String =
-        items.joinToString(", ") { item ->
-            if (item.status == ExpiryStatus.EXPIRED) "${item.foodItem.name} (expired)" else item.foodItem.name
-        }
+        items.joinToString(", ") { item -> item.displayLabel() }
 
     companion object {
         const val EXPIRY_CHANNEL_ID = "expiry_alerts"
