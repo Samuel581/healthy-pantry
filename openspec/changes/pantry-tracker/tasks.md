@@ -89,21 +89,30 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
   `Dispatchers.Main` for a `TestDispatcher`, needed because `viewModelScope` hardcodes
   `Dispatchers.Main.immediate`) for future ViewModel tests (PR9). 6 RED/GREEN test cases in
   `PantryViewModelTest`. Landed on branch `feat/pantry-ui` (cut from `dev`).
-- [ ] 6.2 `PantryListScreen` (Compose, Material 3) — list of pantry items showing name, actual
+- [x] 6.2 `PantryListScreen` (Compose, Material 3) — list of pantry items showing name, actual
   stock, projected stock; swipe/button to delete; FAB to add new item; `hiltViewModel()` to
-  obtain `PantryViewModel`. Not started.
-- [ ] 6.3 `ItemFormScreen` (Compose) — add/edit a `FoodItem`. "Scan barcode" button launching
+  obtain `PantryViewModel`. Landed via PR #10 (`feat(pantry): add PantryListScreen`, commit
+  `47fcc8b`). Corrected 2026-07-12 during Phase 11 apply: this item was left unchecked by the
+  tasks.md reconstruction (see file header) even though the commit and source
+  (`feature/pantry/ui/screen/PantryListScreen.kt`) already existed — verified present and wired
+  into the Phase 11 nav graph before marking complete.
+- [x] 6.3 `ItemFormScreen` (Compose) — add/edit a `FoodItem`. "Scan barcode" button launching
   Google Code Scanner (`GmsBarcodeScanning`) → `NutritionLookupRepository.lookupByBarcode` to
   pre-fill the form (miss → manual-entry mode, per PR5's spec scenario "Barcode not found in
   Open Food Facts"); "Search by name" flow calling `NutritionLookupRepository.searchByName`;
   editable macro fields the user can override, which take precedence over any lookup result once
   touched (spec scenario "Manual macro override always wins", deferred here from PR5 per its
   doc-comment note on `NutritionLookupRepositoryImpl`). Compose UI tests (compile/package only,
-  no emulator in this sandbox — same precedent as PR1's `HarnessInstrumentedSmokeTest`). Not
-  started.
+  no emulator in this sandbox — same precedent as PR1's `HarnessInstrumentedSmokeTest`). Landed
+  via PR #11 (`feat(pantry): add ItemFormScreen`, commit `71ee4f4`, plus follow-up fix
+  `a41a2e1`). Corrected 2026-07-12 during Phase 11 apply — same reconstruction gap as 6.2.
 
 ## Phase 7: Meal-Planning Data (PR7)
-- [ ] 7.1 RED/GREEN `Recipe`/`RecipeIngredient`/`PlanEntry` entities, DAOs, repos (spec: Recipe CRUD, Weekly Plan Assignment).
+- [x] 7.1 RED/GREEN `Recipe`/`RecipeIngredient`/`PlanEntry` entities, DAOs, repos (spec: Recipe CRUD, Weekly Plan Assignment).
+  Landed via PR #12 (`feat(planning): add Recipe/RecipeIngredient/PlanEntry entities, DAOs, and
+  repositories`, commit `82891de`) — verified present in `AppDatabase` (v2 schema:
+  `RecipeEntity`/`RecipeIngredientEntity`/`PlanEntryEntity` + their DAOs). Corrected 2026-07-12
+  during Phase 11 apply — same reconstruction gap as 6.2/6.3 (see also state.yaml's PR3-PR7 note).
 
 ## Phase 8: Planning + Macro Domain (PR8)
 - [x] 8.1 RED/GREEN `ComputeWeeklyNeedsUseCase`, `ComputeMacroTotalsUseCase`, mark-eaten use-case (spec: Item-to-Day Macro Rollup).
