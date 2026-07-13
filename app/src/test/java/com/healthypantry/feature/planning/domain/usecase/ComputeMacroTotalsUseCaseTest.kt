@@ -170,6 +170,27 @@ class ComputeMacroTotalsUseCaseTest {
     }
 
     @Test
+    fun `computeForRecipe fails with a typed error instead of dividing by zero when recipe servings is zero`() {
+        // Given "Bowl" somehow has servings = 0 (no domain/DB validation prevents this)
+        val recipe = RecipeWithIngredients(
+            recipe = bowl(servings = 0),
+            ingredients = listOf(
+                RecipeIngredientDetail(
+                    ingredient = RecipeIngredient(recipeId = 10L, foodItemId = 1L, quantity = 200.0, unit = MeasurementUnit.GRAM, sortOrder = 0),
+                    foodItem = rice(),
+                ),
+            ),
+        )
+
+        // When computed for any requested servings
+        val result = useCase.computeForRecipe(recipe, requestedServings = 1.0, conversionFactorsByFoodItemId = emptyMap())
+
+        // Then it fails with a typed error rather than producing Infinity/NaN
+        assertTrue(result is Result.Failure)
+        assertEquals(UnitConversionError.InvalidRecipeServings(0), (result as Result.Failure).error)
+    }
+
+    @Test
     fun `computeDayTotal sums a recipe entry and a quick-add entry for the same day`() {
         // Given a day has "Bowl" (200g Rice + 150g Chicken, full recipe servings) plus a banana quick-add
         val recipe = RecipeWithIngredients(

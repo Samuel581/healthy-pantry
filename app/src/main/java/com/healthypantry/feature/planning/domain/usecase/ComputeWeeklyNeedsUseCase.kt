@@ -57,11 +57,15 @@ class ComputeWeeklyNeedsUseCase @Inject constructor(
                     // whole week's computation — the caller is expected to resolve every recipeId
                     // present in weekEntries, so this is a defensive no-op, not the normal path.
                     val recipeWithIngredients = recipesById[recipeId] ?: continue
-                    val servingsRatio = requestedServings / recipeWithIngredients.recipe.servings
 
                     for (detail in recipeWithIngredients.ingredients) {
                         val factors = conversionFactorsByFoodItemId[detail.foodItem.id].orEmpty()
-                        val converted = unitConverter.convertScaledIngredient(detail, servingsRatio, factors)
+                        val converted = unitConverter.convertScaledIngredient(
+                            detail,
+                            requestedServings,
+                            recipeWithIngredients.recipe.servings,
+                            factors,
+                        )
                         when (converted) {
                             is Result.Failure -> return converted
                             is Result.Success -> {

@@ -3,6 +3,7 @@ package com.healthypantry.feature.planning.domain.usecase
 import com.healthypantry.core.common.Result
 import com.healthypantry.core.unit.ConversionFactor
 import com.healthypantry.core.unit.MeasurementUnit
+import com.healthypantry.core.unit.UnitConversionError
 import com.healthypantry.core.unit.UnitConverter
 import com.healthypantry.feature.pantry.domain.model.FoodItem
 import com.healthypantry.feature.pantry.domain.model.FoodItemSource
@@ -141,6 +142,20 @@ class ComputeWeeklyNeedsUseCaseTest {
         )
 
         assertTrue(result is Result.Failure)
+    }
+
+    @Test
+    fun `a RECIPE entry whose recipe has zero servings fails with a typed error instead of dividing by zero`() {
+        // Given "Bowl" somehow has servings = 0 (no domain/DB validation prevents this)
+        val entries = listOf(
+            PlanEntry(dateEpochDay = 1, mealSlot = MealSlot.DINNER, type = PlanEntryType.RECIPE, recipeId = bowlRecipeId, servings = 1.0),
+        )
+
+        val result = useCase.compute(entries, recipesById = mapOf(bowlRecipeId to bowl(servings = 0)), conversionFactorsByFoodItemId = emptyMap())
+
+        // Then it fails with a typed error rather than producing Infinity/NaN
+        assertTrue(result is Result.Failure)
+        assertEquals(UnitConversionError.InvalidRecipeServings(0), (result as Result.Failure).error)
     }
 
     @Test

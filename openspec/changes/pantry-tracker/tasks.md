@@ -106,7 +106,24 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
 - [ ] 7.1 RED/GREEN `Recipe`/`RecipeIngredient`/`PlanEntry` entities, DAOs, repos (spec: Recipe CRUD, Weekly Plan Assignment).
 
 ## Phase 8: Planning + Macro Domain (PR8)
-- [ ] 8.1 RED/GREEN `ComputeWeeklyNeedsUseCase`, `ComputeMacroTotalsUseCase`, mark-eaten use-case (spec: Item-to-Day Macro Rollup).
+- [x] 8.1 RED/GREEN `ComputeWeeklyNeedsUseCase`, `ComputeMacroTotalsUseCase`, mark-eaten use-case (spec: Item-to-Day Macro Rollup).
+  - Landed on branch `feat/planning-macro-domain` (PR #13, base `dev`, commit `72dc420`).
+  - Review-fix pass (two independent 4R passes — risk + resilience — both flagged the same two
+    correctness bugs): (1) `MarkPlanEntryEatenUseCase.execute` was missing an idempotency guard —
+    a second call on an already-eaten entry would double-decrement stock; fixed with an early
+    `if (entry.eaten) return Result.success(Unit)` no-op guard. (2) `servingsRatio = requestedServings
+    / recipe.servings` was unguarded in three call sites (`ComputeMacroTotalsUseCase`,
+    `ComputeWeeklyNeedsUseCase`, `MarkPlanEntryEatenUseCase`) — a `Recipe.servings <= 0` (no DB/
+    domain validation prevents this) would divide to `Infinity`/`NaN`, which for the mark-eaten
+    path would wipe all stock for a food item via `StockBatchRepository.decrementForFoodItem`'s
+    FIFO clamp. Fixed once in the shared `IngredientConversion.convertScaledIngredient` helper
+    (guards `recipeServings <= 0`, returns new `UnitConversionError.InvalidRecipeServings` typed
+    failure) instead of tripling the guard across call sites; all three use-cases now propagate
+    the failure the same way they already handle `UnresolvedConversion`. Also corrected
+    `ComputeMacroTotalsUseCase`'s KDoc, which cited `ComputeProjectedStockUseCase` as an example of
+    a "no repository access" convention despite that use-case injecting `StockBatchRepository`.
+    New RED/GREEN test coverage added to `ComputeMacroTotalsUseCaseTest`,
+    `ComputeWeeklyNeedsUseCaseTest`, and `MarkPlanEntryEatenUseCaseTest` for both fixes.
 
 ## Phase 9: Planning UI (PR9)
 - [ ] 9.1 `RecipeViewModel`+`RecipeScreen`; `PlanViewModel`+`WeekPlanScreen` (assign/quick-add/mark-eaten) + compose tests.

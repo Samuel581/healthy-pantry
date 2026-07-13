@@ -14,11 +14,9 @@ import javax.inject.Inject
  * Spec: "Item-to-Day Macro Rollup", "Recipe total from ingredients", "Day total across recipe and
  * quick-add" (sdd/pantry-tracker/spec).
  *
- * Pure JVM domain logic, matching the "pure domain use-cases... TDD-testable in the JVM"
- * convention established by
- * [ComputeProjectedStockUseCase][com.healthypantry.feature.pantry.domain.usecase.ComputeProjectedStockUseCase]:
- * every method accepts already-resolved [RecipeWithIngredients]/[FoodItem] data plus each
- * referenced item's registered [ConversionFactor]s, and performs no repository or Room access.
+ * Pure JVM domain logic: every method accepts already-resolved [RecipeWithIngredients]/[FoodItem]
+ * data plus each referenced item's registered [ConversionFactor]s, and performs no repository or
+ * Room access, so it stays TDD-testable in the JVM without Robolectric.
  *
  * [FoodItem] macro fields are expressed per ONE unit of [FoodItem.canonicalUnit] — NOT per-100g
  * (see [FoodItem] KDoc) — so every quantity is converted to that unit before being multiplied by
@@ -51,12 +49,16 @@ class ComputeMacroTotalsUseCase @Inject constructor(
         requestedServings: Double,
         conversionFactorsByFoodItemId: Map<Long, List<ConversionFactor>>,
     ): Result<MacroTotals, UnitConversionError> {
-        val servingsRatio = requestedServings / recipeWithIngredients.recipe.servings
         var total = MacroTotals.ZERO
 
         for (detail in recipeWithIngredients.ingredients) {
             val factors = conversionFactorsByFoodItemId[detail.foodItem.id].orEmpty()
-            val converted = unitConverter.convertScaledIngredient(detail, servingsRatio, factors)
+            val converted = unitConverter.convertScaledIngredient(
+                detail,
+                requestedServings,
+                recipeWithIngredients.recipe.servings,
+                factors,
+            )
             when (converted) {
                 is Result.Failure -> return converted
                 is Result.Success -> total += computeForQuickAdd(detail.foodItem, converted.value)

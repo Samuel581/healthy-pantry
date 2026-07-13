@@ -6,6 +6,7 @@ import com.healthypantry.core.common.DispatcherProvider
 import com.healthypantry.core.common.Result
 import com.healthypantry.core.database.AppDatabase
 import com.healthypantry.core.unit.MeasurementUnit
+import com.healthypantry.core.unit.UnitConversionError
 import com.healthypantry.core.unit.UnitConverter
 import com.healthypantry.feature.pantry.data.entity.FoodItemEntity
 import com.healthypantry.feature.pantry.data.entity.StockBatchEntity
@@ -179,6 +180,33 @@ class MarkPlanEntryEatenUseCaseTest {
     }
 
     @Test
+    fun `mark-eaten on a RECIPE entry with zero recipe servings fails instead of dividing by zero`() = runTest {
+        // GIVEN a recipe whose servings is 0 (Recipe.servings has no domain/DB validation
+        // preventing this)
+        val zeroServingsRecipeId = database.recipeDao().insert(
+            RecipeEntity(name = "BrokenBowl", servings = 0, notes = null, createdAt = Instant.parse("2026-07-12T00:00:00Z")),
+        )
+        database.recipeIngredientDao().insert(
+            RecipeIngredientEntity(recipeId = zeroServingsRecipeId, foodItemId = riceId, quantity = 200.0, unit = MeasurementUnit.GRAM, sortOrder = 0),
+        )
+        addStock(riceId, 500.0)
+        val id = insertEntry(PlanEntry(dateEpochDay = 1, mealSlot = MealSlot.DINNER, type = PlanEntryType.RECIPE, recipeId = zeroServingsRecipeId, servings = 1.0))
+        val entry = PlanEntry(id = id, dateEpochDay = 1, mealSlot = MealSlot.DINNER, type = PlanEntryType.RECIPE, recipeId = zeroServingsRecipeId, servings = 1.0)
+
+        // WHEN marked eaten
+        val result = useCase.execute(entry, Instant.parse("2026-07-13T19:00:00Z"))
+
+        // THEN the call fails with a typed error instead of dividing by zero (which would produce
+        // Infinity and wipe ALL stock via decrementForFoodItem's FIFO loop) — stock and the eaten
+        // flag are both left untouched
+        assertTrue(result is Result.Failure)
+        assertEquals(UnitConversionError.InvalidRecipeServings(0), (result as Result.Failure).error)
+        assertEquals(500.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
+        val stored = database.planEntryDao().observeWeek(1, 1).first().first { it.id == id }
+        assertFalse(stored.eaten)
+    }
+
+    @Test
     fun `mark-eaten on a RECIPE entry with an unresolved conversion fails with zero side effects`() = runTest {
         // GIVEN a recipe whose Rice ingredient is specified in cups, with NO registered conversion
         val cupBowlId = database.recipeDao().insert(RecipeEntity(name = "CupBowl", servings = 1, notes = null, createdAt = Instant.parse("2026-07-12T00:00:00Z")))
@@ -210,6 +238,26 @@ class MarkPlanEntryEatenUseCaseTest {
 
         assertTrue(result is Result.Success)
         assertEquals(0.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
+    }
+
+    @Test
+    fun `execute on an already-eaten entry is a no-op that does not double-decrement stock`() = runTest {
+        // GIVEN a planned entry of 300g Rice for today, already marked eaten once, with the
+        // decrement from that first mark-eaten already applied (500g -> 200g on hand)
+        addStock(riceId, 500.0)
+        val id = insertEntry(PlanEntry(dateEpochDay = 1, mealSlot = MealSlot.LUNCH, type = PlanEntryType.ITEM, foodItemId = riceId, quantity = 300.0))
+        val freshEntry = PlanEntry(id = id, dateEpochDay = 1, mealSlot = MealSlot.LUNCH, type = PlanEntryType.ITEM, foodItemId = riceId, quantity = 300.0)
+        val firstResult = useCase.execute(freshEntry, Instant.parse("2026-07-13T12:00:00Z"))
+        assertTrue(firstResult is Result.Success)
+        assertEquals(200.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
+
+        // WHEN execute() is called again on the now-eaten entry (double-tap / retried call)
+        val alreadyEatenEntry = freshEntry.copy(eaten = true)
+        val secondResult = useCase.execute(alreadyEatenEntry, Instant.parse("2026-07-13T12:05:00Z"))
+
+        // THEN the call still succeeds, but stock is untouched by the second invocation
+        assertTrue(secondResult is Result.Success)
+        assertEquals(200.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
     }
 
     private suspend fun insertEntry(entry: PlanEntry): Long = database.planEntryDao().insert(

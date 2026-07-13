@@ -37,6 +37,11 @@ import javax.inject.Inject
  * [AppDatabase], so this use-case injects [AppDatabase] directly (mirroring
  * `RecipeRepositoryImpl.upsertRecipeWithIngredients`'s pattern) to guarantee the stock decrement
  * and the eaten flag can never diverge if either half fails.
+ *
+ * [execute] is idempotent: an [entry] whose [PlanEntry.eaten] is already `true` returns
+ * [Result.success] immediately with zero side effects, so a second invocation (UI double-tap, or a
+ * retried call after an ambiguous timeout) never double-decrements stock for a meal that was only
+ * eaten once.
  */
 class MarkPlanEntryEatenUseCase @Inject constructor(
     private val database: AppDatabase,
@@ -48,6 +53,12 @@ class MarkPlanEntryEatenUseCase @Inject constructor(
 ) {
 
     suspend fun execute(entry: PlanEntry, eatenAt: Instant = Instant.now()): Result<Unit, UnitConversionError> {
+        if (entry.eaten) {
+            // Idempotency guard: already-eaten entries are a no-op success rather than
+            // re-resolving conversions and re-decrementing stock.
+            return Result.success(Unit)
+        }
+
         val decrements: List<Pair<Long, Double>> = when (entry.type) {
             PlanEntryType.ITEM -> {
                 val foodItemId = requireNotNull(entry.foodItemId) { "ITEM plan entry must have a foodItemId" }
@@ -66,11 +77,15 @@ class MarkPlanEntryEatenUseCase @Inject constructor(
                     // decrement; the entry is still marked eaten below.
                     emptyList()
                 } else {
-                    val servingsRatio = requestedServings / recipeWithIngredients.recipe.servings
                     val resolved = mutableListOf<Pair<Long, Double>>()
                     for (detail in recipeWithIngredients.ingredients) {
                         val factors = unitConversionRepository.observeForFoodItem(detail.foodItem.id).first()
-                        val converted = unitConverter.convertScaledIngredient(detail, servingsRatio, factors)
+                        val converted = unitConverter.convertScaledIngredient(
+                            detail,
+                            requestedServings,
+                            recipeWithIngredients.recipe.servings,
+                            factors,
+                        )
                         when (converted) {
                             is Result.Failure -> return converted
                             is Result.Success -> resolved += detail.foodItem.id to converted.value
