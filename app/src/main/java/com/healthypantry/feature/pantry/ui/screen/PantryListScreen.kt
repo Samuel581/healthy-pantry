@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +29,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.healthypantry.feature.expiry.domain.model.ExpiringBatch
+import com.healthypantry.feature.expiry.ui.ExpiryBanner
+import com.healthypantry.feature.expiry.ui.vm.ExpiryAlertViewModel
 import com.healthypantry.feature.pantry.domain.model.FoodItem
 import com.healthypantry.feature.pantry.ui.vm.PantryItemUi
 import com.healthypantry.feature.pantry.ui.vm.PantryUiState
@@ -48,8 +52,10 @@ fun PantryListScreen(
     onAddItem: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: PantryViewModel = hiltViewModel(),
+    expiryAlertViewModel: ExpiryAlertViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val expiryUiState by expiryAlertViewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(viewModel) {
@@ -60,6 +66,7 @@ fun PantryListScreen(
 
     PantryListContent(
         uiState = uiState,
+        expiringItems = expiryUiState.expiringItems,
         onAddItem = onAddItem,
         onDeleteItem = viewModel::deleteItem,
         modifier = modifier,
@@ -70,7 +77,8 @@ fun PantryListScreen(
 /**
  * Stateless/presentational half of [PantryListScreen] (container-presentational split), so it can
  * be driven directly in Compose UI tests without a Hilt/ViewModel dependency (see
- * `PantryListScreenTest`).
+ * `PantryListScreenTest`). [expiringItems] renders [ExpiryBanner] above the list content (spec
+ * "Notification-Denied Fallback") — empty by default so existing callers/tests are unaffected.
  */
 @Composable
 fun PantryListContent(
@@ -78,6 +86,7 @@ fun PantryListContent(
     onAddItem: () -> Unit,
     onDeleteItem: (FoodItem) -> Unit,
     modifier: Modifier = Modifier,
+    expiringItems: List<ExpiringBatch> = emptyList(),
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     Scaffold(
@@ -89,14 +98,17 @@ fun PantryListContent(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->
-        when {
-            uiState.isLoading -> LoadingState(modifier = Modifier.padding(innerPadding))
-            uiState.items.isEmpty() -> EmptyState(modifier = Modifier.padding(innerPadding))
-            else -> PantryItemList(
-                items = uiState.items,
-                onDeleteItem = onDeleteItem,
-                modifier = Modifier.padding(innerPadding),
-            )
+        Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            ExpiryBanner(expiringItems = expiringItems)
+            when {
+                uiState.isLoading -> LoadingState(modifier = Modifier.weight(1f))
+                uiState.items.isEmpty() -> EmptyState(modifier = Modifier.weight(1f))
+                else -> PantryItemList(
+                    items = uiState.items,
+                    onDeleteItem = onDeleteItem,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 }
