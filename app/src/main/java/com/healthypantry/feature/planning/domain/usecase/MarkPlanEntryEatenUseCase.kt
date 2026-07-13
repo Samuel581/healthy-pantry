@@ -38,10 +38,17 @@ import javax.inject.Inject
  * `RecipeRepositoryImpl.upsertRecipeWithIngredients`'s pattern) to guarantee the stock decrement
  * and the eaten flag can never diverge if either half fails.
  *
- * [execute] is idempotent: an [entry] whose [PlanEntry.eaten] is already `true` returns
- * [Result.success] immediately with zero side effects, so a second invocation (UI double-tap, or a
- * retried call after an ambiguous timeout) never double-decrements stock for a meal that was only
- * eaten once.
+ * [execute] is idempotent, and the guarantee is enforced at the DB layer, not just in-memory: the
+ * `entry.eaten` check below is a fast-path optimization only (skips re-resolving conversions when
+ * the caller's own snapshot already knows the entry is eaten), NOT the correctness guard. Two
+ * concurrent/rapid calls (UI double-tap, or a retried call after an ambiguous timeout) can both be
+ * built from an equally-stale [PlanEntry] snapshot with `eaten == false` — the fast-path check
+ * alone cannot see this. The actual guard is [PlanEntryRepository.markEaten]'s conditional
+ * `UPDATE ... WHERE eaten = 0`, run *first* inside the transaction below: SQLite/Room serializes
+ * writers, so only one of two concurrent calls for the same entry can ever affect a row. Stock is
+ * only decremented when that guarded update reports it actually flipped the flag; a call that sees
+ * 0 affected rows treats the entry as already eaten (by this call or a concurrent one) and returns
+ * success with zero further side effects.
  */
 class MarkPlanEntryEatenUseCase @Inject constructor(
     private val database: AppDatabase,
@@ -54,8 +61,9 @@ class MarkPlanEntryEatenUseCase @Inject constructor(
 
     suspend fun execute(entry: PlanEntry, eatenAt: Instant = Instant.now()): Result<Unit, UnitConversionError> {
         if (entry.eaten) {
-            // Idempotency guard: already-eaten entries are a no-op success rather than
-            // re-resolving conversions and re-decrementing stock.
+            // Fast-path optimization only (see class KDoc) — NOT the correctness guard. Skips
+            // re-resolving conversions when the caller's own snapshot already knows this entry is
+            // eaten; the real guard is the guarded UPDATE inside the transaction below.
             return Result.success(Unit)
         }
 
@@ -97,8 +105,14 @@ class MarkPlanEntryEatenUseCase @Inject constructor(
         }
 
         database.withTransaction {
+            val affectedRows = planEntryRepository.markEaten(entry.id, eatenAt)
+            if (affectedRows == 0) {
+                // The guarded UPDATE didn't transition anything: this entry was already marked
+                // eaten by this call or a concurrent one racing ahead of us. Do NOT decrement stock
+                // again — the DB, not our possibly-stale `entry` snapshot, is the source of truth.
+                return@withTransaction
+            }
             decrements.forEach { (foodItemId, amount) -> stockBatchRepository.decrementForFoodItem(foodItemId, amount) }
-            planEntryRepository.markEaten(entry.id, eatenAt)
         }
 
         return Result.success(Unit)

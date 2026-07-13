@@ -24,6 +24,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +43,14 @@ data class PlanEntryUi(
     val displayName: String,
 )
 
+/** Intermediate join of [PlanViewModel.uiState]'s combined sources, before [PlanEntryUi] display names are resolved. */
+private data class WeekPlanSnapshot(
+    val entries: List<PlanEntry>,
+    val recipes: List<Recipe>,
+    val foodItems: List<FoodItem>,
+    val isSaving: Boolean,
+)
+
 data class PlanUiState(
     val weekRange: WeekRange = currentWeekRange(),
     val entries: List<PlanEntryUi> = emptyList(),
@@ -51,6 +60,14 @@ data class PlanUiState(
     val weeklyNeeds: Map<Long, Double> = emptyMap(),
     val weeklyNeedsError: String? = null,
     val isLoading: Boolean = true,
+    /**
+     * `true` while a [PlanViewModel.markEaten]/[PlanViewModel.assignRecipe]/
+     * [PlanViewModel.quickAddItem] write is in flight. UI-layer defense in depth against a
+     * double-tap on "Mark eaten"/"Add" (the actual correctness guarantee for "Mark eaten" is the
+     * DB-layer atomic guard in `PlanEntryDao.markEaten`; this only prevents the button staying
+     * tappable while a write is pending and, for "Add", avoids a duplicate [PlanEntry] row).
+     */
+    val isSaving: Boolean = false,
 )
 
 /**
@@ -77,13 +94,17 @@ class PlanViewModel @Inject constructor(
 
     val weekRange: WeekRange = currentWeekRange()
 
+    /** Backing state for [PlanUiState.isSaving], see its KDoc. */
+    private val _isSaving = MutableStateFlow(false)
+
     val uiState: StateFlow<PlanUiState> = combine(
         planEntryRepository.observeWeek(weekRange.startEpochDay, weekRange.endEpochDay),
         recipeRepository.observeAll(),
         foodItemRepository.observeAll(),
-    ) { entries, recipes, foodItems -> Triple(entries, recipes, foodItems) }
-        .flatMapLatest { (entries, recipes, foodItems) ->
-            resolveWeeklyNeeds(entries).map { needsResult -> buildUiState(entries, recipes, foodItems, needsResult) }
+        _isSaving,
+    ) { entries, recipes, foodItems, isSaving -> WeekPlanSnapshot(entries, recipes, foodItems, isSaving) }
+        .flatMapLatest { snapshot ->
+            resolveWeeklyNeeds(snapshot.entries).map { needsResult -> buildUiState(snapshot, needsResult) }
         }
         .stateIn(
             scope = viewModelScope,
@@ -95,14 +116,12 @@ class PlanViewModel @Inject constructor(
     val errorEvent: SharedFlow<String> = _errorEvent.asSharedFlow()
 
     private fun buildUiState(
-        entries: List<PlanEntry>,
-        recipes: List<Recipe>,
-        foodItems: List<FoodItem>,
+        snapshot: WeekPlanSnapshot,
         needsResult: Result<Map<Long, Double>, UnitConversionError>,
     ): PlanUiState {
-        val recipesById = recipes.associateBy { it.id }
-        val foodItemsById = foodItems.associateBy { it.id }
-        val entryUis = entries.map { entry ->
+        val recipesById = snapshot.recipes.associateBy { it.id }
+        val foodItemsById = snapshot.foodItems.associateBy { it.id }
+        val entryUis = snapshot.entries.map { entry ->
             val displayName = when (entry.type) {
                 PlanEntryType.RECIPE -> recipesById[entry.recipeId]?.name ?: "Unknown recipe"
                 PlanEntryType.ITEM -> foodItemsById[entry.foodItemId]?.name ?: "Unknown item"
@@ -112,11 +131,12 @@ class PlanViewModel @Inject constructor(
         return PlanUiState(
             weekRange = weekRange,
             entries = entryUis,
-            recipes = recipes,
-            foodItems = foodItems,
+            recipes = snapshot.recipes,
+            foodItems = snapshot.foodItems,
             weeklyNeeds = needsResult.getOrNull().orEmpty(),
             weeklyNeedsError = needsResult.errorOrNull()?.toUserMessage(),
             isLoading = false,
+            isSaving = snapshot.isSaving,
         )
     }
 
@@ -143,7 +163,7 @@ class PlanViewModel @Inject constructor(
     }
 
     /** Assigns [recipeId] to [day]/[mealSlot] for [servings] (spec "Assign a recipe to a day"). */
-    fun assignRecipe(day: Long, mealSlot: MealSlot, recipeId: Long, servings: Double) = launchOnIo {
+    fun assignRecipe(day: Long, mealSlot: MealSlot, recipeId: Long, servings: Double) = launchGuarded {
         planEntryRepository.upsert(
             PlanEntry(
                 dateEpochDay = day,
@@ -156,7 +176,7 @@ class PlanViewModel @Inject constructor(
     }
 
     /** Quick-adds [foodItemId] + [quantity] to [day]/[mealSlot], no recipe (spec "Quick-add a raw item"). */
-    fun quickAddItem(day: Long, mealSlot: MealSlot, foodItemId: Long, quantity: Double) = launchOnIo {
+    fun quickAddItem(day: Long, mealSlot: MealSlot, foodItemId: Long, quantity: Double) = launchGuarded {
         planEntryRepository.upsert(
             PlanEntry(
                 dateEpochDay = day,
@@ -174,8 +194,12 @@ class PlanViewModel @Inject constructor(
      * Marks [entry] eaten via [MarkPlanEntryEatenUseCase] (spec "Marking eaten removes the entry
      * from projected deficit"). A typed [Result.Failure] (e.g. an unresolvable unit conversion)
      * surfaces through [errorEvent] the same way an unexpected repository exception does.
+     *
+     * Wrapped in [launchGuarded] as UI-layer defense in depth against a double-tap: the actual
+     * correctness guarantee against a double stock decrement is the DB-layer atomic guard in
+     * [MarkPlanEntryEatenUseCase]/`PlanEntryDao.markEaten`, not this flag.
      */
-    fun markEaten(entry: PlanEntry) = launchOnIo {
+    fun markEaten(entry: PlanEntry) = launchGuarded {
         when (val result = markPlanEntryEatenUseCase.execute(entry)) {
             is Result.Failure -> _errorEvent.emit(result.error.toUserMessage())
             is Result.Success -> Unit
@@ -189,6 +213,27 @@ class PlanViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 _errorEvent.emit(e.message ?: "Something went wrong")
+            }
+        }
+    }
+
+    /**
+     * Same as [launchOnIo], plus [PlanUiState.isSaving] bookkeeping: ignores the call outright if
+     * a previous guarded write is still in flight (defense in depth alongside the UI disabling its
+     * buttons while [PlanUiState.isSaving] is `true`), and always clears the flag afterwards
+     * whether [block] succeeds, fails, or throws.
+     */
+    private fun launchGuarded(block: suspend () -> Unit) {
+        if (_isSaving.value) return
+        _isSaving.value = true
+        viewModelScope.launch(dispatcherProvider.io) {
+            try {
+                block()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _errorEvent.emit(e.message ?: "Something went wrong")
+            } finally {
+                _isSaving.value = false
             }
         }
     }

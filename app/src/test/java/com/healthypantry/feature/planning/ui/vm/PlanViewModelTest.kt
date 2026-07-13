@@ -24,6 +24,7 @@ import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -32,6 +33,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -219,6 +221,67 @@ class PlanViewModelTest {
 
         assertTrue(viewModel.uiState.value.entries.first().entry.eaten)
         assertEquals(200.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
+    }
+
+    @Test
+    fun `markEaten on a RECIPE entry with zero recipe servings surfaces InvalidRecipeServings via errorEvent`() = runTest {
+        // GIVEN a recipe whose servings is 0 (no domain/DB validation prevents this - see
+        // MarkPlanEntryEatenUseCaseTest's own zero-servings scenario)
+        val brokenRecipeId = database.recipeDao().insert(
+            RecipeEntity(name = "BrokenBowl", servings = 0, notes = null, createdAt = Instant.parse("2026-07-12T00:00:00Z")),
+        )
+        database.recipeIngredientDao().insert(
+            RecipeIngredientEntity(recipeId = brokenRecipeId, foodItemId = riceId, quantity = 200.0, unit = MeasurementUnit.GRAM, sortOrder = 0),
+        )
+        addStock(riceId, 500.0)
+        val viewModel = buildViewModel()
+        viewModel.startCollecting()
+        advanceUntilIdle()
+        val day = viewModel.weekRange.startEpochDay
+
+        viewModel.assignRecipe(day = day, mealSlot = MealSlot.DINNER, recipeId = brokenRecipeId, servings = 1.0)
+        advanceUntilIdle()
+        val entry = viewModel.uiState.value.entries.first().entry
+
+        val errorDeferred = async { viewModel.errorEvent.first() }
+        advanceUntilIdle()
+
+        // WHEN marking it eaten
+        viewModel.markEaten(entry)
+        advanceUntilIdle()
+
+        // THEN the typed InvalidRecipeServings failure surfaces through errorEvent, and stock/the
+        // eaten flag are both left untouched
+        assertEquals("Recipe has invalid servings (0) - can't compute quantities.", errorDeferred.await())
+        assertEquals(500.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
+        assertFalse(viewModel.uiState.value.entries.first().entry.eaten)
+    }
+
+    @Test
+    fun `markEaten called twice with the same stale (eaten=false) entry only decrements stock once`() = runTest {
+        // GIVEN a plan entry marked eaten once already, decrementing stock 500g -> 200g
+        addStock(riceId, 500.0)
+        val viewModel = buildViewModel()
+        viewModel.startCollecting()
+        advanceUntilIdle()
+        val day = viewModel.weekRange.startEpochDay
+
+        viewModel.quickAddItem(day = day, mealSlot = MealSlot.LUNCH, foodItemId = riceId, quantity = 300.0)
+        advanceUntilIdle()
+        val staleEntry = viewModel.uiState.value.entries.first().entry
+
+        viewModel.markEaten(staleEntry)
+        advanceUntilIdle()
+        assertEquals(200.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
+
+        // WHEN markEaten is invoked again using the SAME stale (eaten=false) snapshot, simulating
+        // a double-tap that fires before the UI's own entry reference was refreshed
+        viewModel.markEaten(staleEntry)
+        advanceUntilIdle()
+
+        // THEN the second call is a no-op: stock stays at 200g and the entry remains eaten
+        assertEquals(200.0, database.stockBatchDao().observeTotalOnHand(riceId).first(), 0.0001)
+        assertTrue(viewModel.uiState.value.entries.first().entry.eaten)
     }
 
     @Test

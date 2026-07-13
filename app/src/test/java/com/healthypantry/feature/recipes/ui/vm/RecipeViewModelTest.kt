@@ -216,6 +216,49 @@ class RecipeViewModelTest {
     }
 
     @Test
+    fun `removeIngredientRow drops a middle row and saveRecipe persists the remaining rows in order`() = runTest {
+        val foodItemRepository = FakeFoodItemRepository()
+        val recipeRepository = FakeRecipeRepository()
+        val chickenId = foodItemRepository.upsert(chickenBreast(id = 1L))
+        recipeRepository.seedFoodItem(chickenBreast(id = chickenId))
+        val riceItem = chickenBreast(id = 2L).copy(name = "Rice")
+        val riceId = foodItemRepository.upsert(riceItem)
+        recipeRepository.seedFoodItem(riceItem.copy(id = riceId))
+        val beansItem = chickenBreast(id = 3L).copy(name = "Beans")
+        val beansId = foodItemRepository.upsert(beansItem)
+        recipeRepository.seedFoodItem(beansItem.copy(id = beansId))
+        val viewModel = buildViewModel(recipeRepository, foodItemRepository)
+        viewModel.startCollecting()
+        advanceUntilIdle()
+
+        // GIVEN three ingredient rows: Chicken, Rice, Beans
+        viewModel.onNameChanged("Bowl")
+        viewModel.addIngredientRow()
+        viewModel.updateIngredientRow(0, RecipeIngredientFormRow(foodItemId = chickenId, quantity = "150", unit = MeasurementUnit.GRAM))
+        viewModel.addIngredientRow()
+        viewModel.updateIngredientRow(1, RecipeIngredientFormRow(foodItemId = riceId, quantity = "200", unit = MeasurementUnit.GRAM))
+        viewModel.addIngredientRow()
+        viewModel.updateIngredientRow(2, RecipeIngredientFormRow(foodItemId = beansId, quantity = "100", unit = MeasurementUnit.GRAM))
+
+        // WHEN the middle row (Rice) is removed and the recipe is saved
+        viewModel.removeIngredientRow(1)
+        viewModel.saveRecipe()
+        advanceUntilIdle()
+
+        // THEN only Chicken and Beans remain, in their original relative order, each with the
+        // correct quantity and a contiguous 0-based sortOrder (not a gap left by the removed row)
+        val saved = recipeRepository.observeRecipeWithIngredients(viewModel.uiState.value.recipes.first().id).first()
+        requireNotNull(saved)
+        assertEquals(2, saved.ingredients.size)
+        assertEquals("Chicken breast", saved.ingredients[0].foodItem.name)
+        assertEquals(150.0, saved.ingredients[0].ingredient.quantity, 0.0001)
+        assertEquals(0, saved.ingredients[0].ingredient.sortOrder)
+        assertEquals("Beans", saved.ingredients[1].foodItem.name)
+        assertEquals(100.0, saved.ingredients[1].ingredient.quantity, 0.0001)
+        assertEquals(1, saved.ingredients[1].ingredient.sortOrder)
+    }
+
+    @Test
     fun `startNewRecipe resets formState to a blank recipe`() = runTest {
         val recipeRepository = FakeRecipeRepository()
         val id = recipeRepository.upsertRecipeWithIngredients(

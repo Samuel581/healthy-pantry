@@ -124,17 +124,30 @@ class PlanEntryRepositoryTest {
     }
 
     @Test
-    fun `markEaten marks the entry eaten at the given instant`() = runTest {
+    fun `markEaten marks the entry eaten at the given instant and returns 1 affected row`() = runTest {
         val id = repository.upsert(
             PlanEntry(dateEpochDay = monday, mealSlot = MealSlot.DINNER, type = PlanEntryType.RECIPE, recipeId = bowlId, servings = 1.0),
         )
         val eatenAt = Instant.parse("2026-07-13T19:00:00Z")
 
-        repository.markEaten(id, eatenAt)
+        val affectedRows = repository.markEaten(id, eatenAt)
 
         val stored = repository.observeWeek(monday, monday).first().first { it.id == id }
+        assertEquals(1, affectedRows)
         assertTrue(stored.eaten)
         assertEquals(eatenAt.toEpochMilli(), stored.eatenAt)
+    }
+
+    @Test
+    fun `markEaten on an already-eaten entry returns 0 affected rows`() = runTest {
+        val id = repository.upsert(
+            PlanEntry(dateEpochDay = monday, mealSlot = MealSlot.DINNER, type = PlanEntryType.RECIPE, recipeId = bowlId, servings = 1.0),
+        )
+        repository.markEaten(id, Instant.parse("2026-07-13T19:00:00Z"))
+
+        val secondAffectedRows = repository.markEaten(id, Instant.parse("2026-07-13T20:00:00Z"))
+
+        assertEquals(0, secondAffectedRows)
     }
 
     @Test

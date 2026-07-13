@@ -98,6 +98,7 @@ fun WeekPlanContent(
                     days = uiState.weekRange.days,
                     recipes = uiState.recipes,
                     foodItems = uiState.foodItems,
+                    isSaving = uiState.isSaving,
                     onAssignRecipe = onAssignRecipe,
                     onQuickAdd = onQuickAdd,
                 )
@@ -110,7 +111,12 @@ fun WeekPlanContent(
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(items = uiState.entries, key = { it.entry.id }) { entryUi ->
-                            PlanEntryRow(entryUi = entryUi, onMarkEaten = { onMarkEaten(entryUi.entry) }, onDelete = { onDeleteEntry(entryUi.entry) })
+                            PlanEntryRow(
+                                entryUi = entryUi,
+                                isSaving = uiState.isSaving,
+                                onMarkEaten = { onMarkEaten(entryUi.entry) },
+                                onDelete = { onDeleteEntry(entryUi.entry) },
+                            )
                         }
                     }
                 }
@@ -120,7 +126,13 @@ fun WeekPlanContent(
 }
 
 @Composable
-private fun PlanEntryRow(entryUi: PlanEntryUi, onMarkEaten: () -> Unit, onDelete: () -> Unit, modifier: Modifier = Modifier) {
+private fun PlanEntryRow(
+    entryUi: PlanEntryUi,
+    isSaving: Boolean,
+    onMarkEaten: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val entry = entryUi.entry
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -136,8 +148,12 @@ private fun PlanEntryRow(entryUi: PlanEntryUi, onMarkEaten: () -> Unit, onDelete
         }
         Row {
             if (!entry.eaten) {
+                // `enabled = !isSaving` is UI-layer defense in depth against a double-tap: the
+                // real guarantee against a double stock decrement is the DB-layer atomic guard in
+                // `PlanEntryDao.markEaten` (see `MarkPlanEntryEatenUseCase`), not this flag alone.
                 TextButton(
                     onClick = onMarkEaten,
+                    enabled = !isSaving,
                     modifier = Modifier.semantics { contentDescription = "Mark ${entryUi.displayName} eaten" },
                 ) { Text("Mark eaten") }
             } else {
@@ -156,6 +172,7 @@ private fun AssignEntryForm(
     days: List<Long>,
     recipes: List<Recipe>,
     foodItems: List<FoodItem>,
+    isSaving: Boolean,
     onAssignRecipe: (day: Long, mealSlot: MealSlot, recipeId: Long, servings: Double) -> Unit,
     onQuickAdd: (day: Long, mealSlot: MealSlot, foodItemId: Long, quantity: Double) -> Unit,
     modifier: Modifier = Modifier,
@@ -244,6 +261,9 @@ private fun AssignEntryForm(
                     EntryKind.ITEM -> selectedFoodItemId?.let { onQuickAdd(selectedDay, selectedSlot, it, amount) }
                 }
             },
+            // Defense in depth against a double-tap creating a duplicate PlanEntry row: see
+            // `PlanEntryRow`'s "Mark eaten" button for the same `isSaving` convention.
+            enabled = !isSaving,
         ) { Text("Add") }
     }
 }
