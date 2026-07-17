@@ -26,12 +26,22 @@ class ComputeMacroTotalsUseCase @Inject constructor(
     private val unitConverter: UnitConverter,
 ) {
 
-    /** Macros for [quantity] canonical units of a single quick-add [foodItem] — no conversion needed. */
+    /**
+     * Macros for [quantity] canonical units of a single quick-add [foodItem] — no conversion
+     * needed. A `null` macro field on [foodItem] (spec "Missing macro data on an item") is
+     * treated as `0.0` for the numeric contribution, but flags the returned
+     * [MacroTotals.isComplete] as `false` rather than silently reporting a zero-inflated total as
+     * exact.
+     */
     fun computeForQuickAdd(foodItem: FoodItem, quantity: Double): MacroTotals = MacroTotals(
-        calories = foodItem.caloriesPerUnit * quantity,
-        proteinGrams = foodItem.proteinGramsPerUnit * quantity,
-        carbsGrams = foodItem.carbsGramsPerUnit * quantity,
-        fatGrams = foodItem.fatGramsPerUnit * quantity,
+        calories = (foodItem.caloriesPerUnit ?: 0.0) * quantity,
+        proteinGrams = (foodItem.proteinGramsPerUnit ?: 0.0) * quantity,
+        carbsGrams = (foodItem.carbsGramsPerUnit ?: 0.0) * quantity,
+        fatGrams = (foodItem.fatGramsPerUnit ?: 0.0) * quantity,
+        isComplete = foodItem.caloriesPerUnit != null &&
+            foodItem.proteinGramsPerUnit != null &&
+            foodItem.carbsGramsPerUnit != null &&
+            foodItem.fatGramsPerUnit != null,
     )
 
     /**

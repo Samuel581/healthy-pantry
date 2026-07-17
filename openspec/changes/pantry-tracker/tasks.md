@@ -134,6 +134,55 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
     New RED/GREEN test coverage added to `ComputeMacroTotalsUseCaseTest`,
     `ComputeWeeklyNeedsUseCaseTest`, and `MarkPlanEntryEatenUseCaseTest` for both fixes.
 
+- [x] 8.2 Fix CRITICAL gap from verify-report.md: macro-tracking spec scenario "Missing macro
+  data on an item" (distinguish "0 macros" from "unknown macros" in the rollup) had zero
+  implementation/test.
+  - Landed on branch `fix/macro-data-completeness` (base `dev`).
+  - Root cause: `FoodItem`/`FoodItemEntity`'s four macro fields were non-nullable `Double`, and
+    `ItemFormUiState.toFoodItem` coerced a blank/unparseable macro field to `0.0` at save time —
+    permanently discarding the null-vs-zero distinction the nutrition-lookup layer
+    (`NutritionResult`) already preserved correctly.
+  - Fix: `FoodItem.caloriesPerUnit/proteinGramsPerUnit/carbsGramsPerUnit/fatGramsPerUnit` and the
+    matching `FoodItemEntity` columns widened to nullable `Double?`. `AppDatabase` bumped to
+    `version = 3` (no `Migration` object — same greenfield-local-DB precedent already documented
+    on the class for the v1->v2 bump; no installed clients exist to migrate). `ItemFormUiState
+    .toFoodItem` now saves a blank/unparseable field as `null` instead of `0.0`.
+    `ItemFormViewModel.loadExisting` updated in the same pass: seeding the edit form from a
+    `FoodItem` with a `null` macro now renders an empty field instead of the literal text
+    `"null"` (an `Any?.toString()` foot-gun the nullability change would otherwise introduce),
+    so the null round-trips correctly through an edit-and-resave.
+  - `MacroTotals` gained an `isComplete: Boolean = true` field (`true` = every contributing
+    macro field was known); `plus` ANDs `isComplete` across operands, so `computeForRecipe`/
+    `computeDayTotal`'s existing `+=` accumulation propagates incompleteness bottom-up with no
+    changes needed to those two methods. `ComputeMacroTotalsUseCase.computeForQuickAdd` treats a
+    `null` macro as `0.0` for the numeric contribution (so totals stay additive) while setting
+    `isComplete = false` whenever any of the item's four macro fields is unknown.
+  - Traced `PantryViewModel`/`PlanViewModel`/`WeekPlanScreen`/`RecipeViewModel` per the task's
+    explicit instruction to check for a UI layer coercing the new signal back to zero: confirmed
+    via CodeGraph blast-radius + direct grep that `ComputeMacroTotalsUseCase`/`MacroTotals` have
+    **zero production callers outside their own package** — no ViewModel or screen invokes the
+    macro rollup yet (it is unwired, the same situation `ComputeWeeklyNeedsUseCase` was in before
+    PR9). `PantryViewModel`/`ComputeProjectedStockUseCase` only ever touched stock quantities, not
+    macros. So there is no UI coercion to fix in this pass — nothing beyond the domain/save-path
+    layer needed changes to keep the new signal intact.
+  - `ComputeWeeklyNeedsUseCase` was traced too: it rolls up committed *quantities*, not macros, so
+    it is unaffected by this fix (confirmed by reading its full source — no macro field access).
+  - Tests (Strict TDD, RED then GREEN, hand-written fakes, no mocking framework): `ItemFormUiStateTest`
+    (`toFoodItem` blank/unparseable -> null, not zero; explicit `"0"` still saves a real `0.0`),
+    `ItemFormViewModelTest` (`loadExisting` renders a null macro as blank, not `"null"`, and it
+    round-trips back to `null` on resave), `ComputeMacroTotalsUseCaseTest` (`computeForQuickAdd`
+    flags `isComplete = false` for an unknown macro while still summing known ones; a fully-known
+    item incl. a real `0.0` stays `isComplete = true`; `computeDayTotal` propagates incompleteness
+    from one incomplete entry across the whole day, and stays complete when every entry is
+    complete). Also fixed 7 pre-existing test call sites elsewhere
+    (`FoodItemRepositoryTest`, `PantryViewModelTest`) that read a now-`Double?` macro field
+    straight into `assertEquals(double, double, delta)` and would no longer compile — unwrapped
+    with `!!` since those specific fixtures always supply a known macro value.
+  - Verified by manual trace only (no JDK/gradle in this sandbox, same constraint as every prior
+    apply phase in this project) — every changed file and every call site of the four macro
+    fields across `app/src/main` and `app/src/test` was read and traced by hand; no
+    `./gradlew test`/`./gradlew build` was executed.
+
 ## Phase 9: Planning UI (PR9)
 - [x] 9.1 `RecipeViewModel`+`RecipeScreen`; `PlanViewModel`+`WeekPlanScreen` (assign/quick-add/mark-eaten) + compose tests.
   - Landed on branch `feat/planning-ui` (cut from `dev`, includes Phase 7/8 data+domain history).
@@ -254,9 +303,10 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
     `testInstrumentationRunner`), `di/TestDatabaseModule` (`@TestInstallIn` in-memory `AppDatabase`
     replacing `DatabaseModule`, every repository/DAO/use-case above it still the real production
     implementation), and `AppNavigationSmokeTest` (`@HiltAndroidTest`): launch -> land on Pantry
-    tab (empty state) -> tap `+` -> add-item form -> fill name only, save (macros default to 0.0)
-    -> item visible back on the list -> switch to Recipes tab and back to Pantry -> item still
-    visible (save/restore-state). One golden path, not exhaustive — per-feature Compose tests
+    tab (empty state) -> tap `+` -> add-item form -> fill name only, save (macros save as unknown,
+    see task 8.2 — this note previously said "default to 0.0", corrected there) -> item visible
+    back on the list -> switch to Recipes tab and back to Pantry -> item still visible
+    (save/restore-state). One golden path, not exhaustive — per-feature Compose tests
     (`PantryListScreenTest`/`RecipeScreenTest`/`WeekPlanScreenTest`) already cover screen-level
     behavior against stateless `*Content` composables.
   - `hilt-android-testing` (androidTestImplementation) + `kspAndroidTest(hilt-compiler)` added.

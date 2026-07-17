@@ -88,7 +88,7 @@ class FoodItemRepositoryTest {
 
         val all = repository.observeAll().first()
         assertEquals(1, all.size)
-        assertEquals(2.0, all.first().caloriesPerUnit, 0.0001)
+        assertEquals(2.0, all.first().caloriesPerUnit!!, 0.0001)
     }
 
     @Test
@@ -100,7 +100,7 @@ class FoodItemRepositoryTest {
 
         assertEquals(2, all.size)
         assertEquals(setOf("Chicken breast", "Rice"), all.map { it.name }.toSet())
-        assertEquals(0.28, all.first { it.name == "Rice" }.carbsGramsPerUnit, 0.0001)
+        assertEquals(0.28, all.first { it.name == "Rice" }.carbsGramsPerUnit!!, 0.0001)
     }
 
     @Test

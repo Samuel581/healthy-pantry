@@ -38,16 +38,20 @@ class ItemFormViewModel @Inject constructor(
      * Seeds the form from an already-persisted [item] for edit mode. Every field starts
      * "touched" so a stray barcode scan or USDA search while editing can't silently overwrite
      * already-saved values without an explicit further edit.
+     *
+     * A `null` macro on [item] (unknown, see [FoodItem] KDoc) seeds the field as an empty string
+     * rather than the literal text `"null"`, so [ItemFormUiState.toFoodItem] round-trips it back
+     * to `null` on the next save unless the user actually types a value.
      */
     fun loadExisting(item: FoodItem) {
         _uiState.update {
             it.copy(
                 name = item.name,
                 canonicalUnit = item.canonicalUnit,
-                caloriesPerUnit = item.caloriesPerUnit.toString(),
-                proteinGramsPerUnit = item.proteinGramsPerUnit.toString(),
-                carbsGramsPerUnit = item.carbsGramsPerUnit.toString(),
-                fatGramsPerUnit = item.fatGramsPerUnit.toString(),
+                caloriesPerUnit = item.caloriesPerUnit?.toString().orEmpty(),
+                proteinGramsPerUnit = item.proteinGramsPerUnit?.toString().orEmpty(),
+                carbsGramsPerUnit = item.carbsGramsPerUnit?.toString().orEmpty(),
+                fatGramsPerUnit = item.fatGramsPerUnit?.toString().orEmpty(),
                 source = item.source,
                 barcode = item.barcode,
                 externalSourceId = item.externalSourceId,

@@ -246,7 +246,7 @@ class PantryViewModelTest {
 
         val row = viewModel.uiState.value.items.first()
         assertEquals("Grilled chicken breast", row.foodItem.name)
-        assertEquals(1.8, row.foodItem.caloriesPerUnit, 0.0001)
+        assertEquals(1.8, row.foodItem.caloriesPerUnit!!, 0.0001)
     }
 
     @Test
