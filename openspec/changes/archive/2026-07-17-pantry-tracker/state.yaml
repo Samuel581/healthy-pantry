@@ -12,15 +12,29 @@ dag:
   design: done
   tasks: done
   apply: done   # all 11 phases implemented; PR11 (feat/app-integration) pending merge
-  verify: blocked   # 2026-07-16: verify-report.md written. Verdict PASS WITH GAPS -
-                     # 1 CRITICAL (macro-tracking spec scenario "Missing macro data on
-                     # an item" has zero implementation/test - not previously documented
-                     # as deferred, unlike committedQuantity). No JDK/gradle in this
-                     # sandbox, so verification is source-traced (34 test files read in
-                     # full), not runtime-executed - same constraint as every apply phase.
-                     # See verify-report.md for full compliance matrix and 2 WARNINGs.
-  archive: pending   # blocked on the CRITICAL finding above until it is either
-                     # implemented or explicitly descoped/deferred like committedQuantity.
+  verify: done   # 2026-07-17: verify-report.md re-run against dev@64ff15d (PR #17,
+                     # fix(macro-tracking): distinguish unknown macros from a verified
+                     # zero). The 1 CRITICAL from the 2026-07-16 pass (macro-tracking
+                     # "Missing macro data on an item") is now CLOSED: traced
+                     # FoodItem/FoodItemEntity nullable macro fields,
+                     # ItemFormUiState.toFoodItem/ItemFormViewModel.loadExisting
+                     # null-vs-zero round-trip, and MacroTotals.isComplete propagation
+                     # through both computeForRecipe and computeDayTotal's RecipeEntry
+                     # branch (the recipe-rollup path explicitly re-checked), each
+                     # backed by traced test assertions, not just presence. No
+                     # regression found in shared files the fix touched (AppDatabase.kt,
+                     # MacroTotals.kt, FoodItemMapper.kt). Verdict now PASS WITH
+                     # WARNINGS - 0 CRITICAL, 2 WARNING (SystemExpiryNotifier
+                     # permission-denied test gap, stale design.md migration wording),
+                     # 1 SUGGESTION (committedQuantity stub) - all three carried
+                     # forward unregressed from the prior pass. Still no JDK/gradle in
+                     # this sandbox; verification remains source-traced, not
+                     # runtime-executed. See verify-report.md.
+  archive: done   # 2026-07-17: sdd-archive completed. Delta specs copied to
+                     # openspec/specs/{domain}/spec.md. Change folder moved to
+                     # archive/2026-07-17-pantry-tracker/. Archive report written.
+                     # WARNINGs and SUGGESTION preserved as non-blocking follow-ups.
+                     # SDD v1 cycle complete and closed.
 
 delivery_strategy: ask-on-risk
 chain_strategy: serial   # each branch cut from dev only after previous PR merges to dev; every PR targets dev
@@ -73,7 +87,9 @@ apply_progress:
   - pr: 8.2
     work_unit: "Fix CRITICAL verify-report.md gap - macro-tracking 'Missing macro data on an item' (null-vs-zero macro completeness)"
     branch: fix/macro-data-completeness
-    status: implemented_pending_review
+    status: merged   # merged to dev via PR #17 (commit 64ff15d); sdd-verify re-run
+    #   2026-07-17 confirms the CRITICAL finding is closed - see notes below and
+    #   verify-report.md.
     tasks_done: ["8.2"]
     notes: >
       FoodItem/FoodItemEntity macro fields widened Double -> Double? (AppDatabase bumped to
@@ -96,6 +112,11 @@ apply_progress:
       dag.verify; sdd-verify re-runs to confirm. Out of scope for this pass per explicit
       instruction: SystemExpiryNotifier permission-denied-branch test gap (WARNING) and
       design.md's stale v1->v2 "migration" wording (WARNING) — both left untouched.
+      2026-07-17 sdd-verify re-run: independently traced (not taken on faith) every claim
+      above against spec.md scenario text and the actual test assertions, including both
+      recipe-rollup entry points (computeForRecipe directly, computeDayTotal's RecipeEntry
+      branch). CRITICAL finding closed, no regression found in AppDatabase.kt/MacroTotals.kt/
+      FoodItemMapper.kt. dag.verify -> done, dag.archive -> ready. See verify-report.md.
   - pr: 9
     work_unit: "Planning UI - RecipeViewModel/RecipeScreen, PlanViewModel/WeekPlanScreen"
     branch: feat/planning-ui
@@ -171,7 +192,5 @@ apply_progress:
       use-cases otherwise), AppNavigationSmokeTest (@HiltAndroidTest) covering one golden path:
       launch -> Pantry tab -> add item -> save -> visible in list -> switch tabs and back ->
       still visible. README gained an "Overview" and "Run" section; USDA API key docs already
-      existed from Phase 1/5 and needed no changes. Diff ~345 changed lines across 9 files -
-      within the project's proactive-split budget, no split needed. Verified by manual trace only
-      (no JDK/gradle in this sandbox) - traced all four screens reachable from the nav graph,
-      none orphaned.
+      existed from Phase 1/5 and needed no changes. Verified by manual trace only (no JDK/gradle
+      in this sandbox) - traced all four screens reachable from the nav graph, none orphaned.
