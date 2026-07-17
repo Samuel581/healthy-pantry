@@ -11,7 +11,7 @@ dag:
   specs: done
   design: done
   tasks: done
-  apply: in_progress
+  apply: done   # all 11 phases implemented; PR11 (feat/app-integration) pending merge
   verify: pending
   archive: pending
 
@@ -113,3 +113,32 @@ apply_progress:
       ~400-450-line proactive-split precedent (see PR3/PR5/PR6 notes in tasks.md) — not split
       preemptively per this task's explicit instruction to flag rather than decide unilaterally;
       left to reviewer/orchestrator to split or accept as size:exception.
+  - pr: 11
+    work_unit: "Integration - nav graph + bottom nav, theme, periodic worker confirmation, e2e smoke test, README"
+    branch: feat/app-integration
+    status: implemented_pending_review
+    tasks_done: ["11.1"]
+    notes: >
+      FINAL phase of the pantry-tracker v1 tasks list. app/navigation/{Destinations,
+      HealthyPantryNavHost,HealthyPantryBottomBar}.kt wire PantryListScreen->ItemFormScreen
+      (nested pantry_graph route) plus top-level recipes/plan routes for RecipeScreen/
+      WeekPlanScreen (already self-contained) behind a Material3 NavigationBar (standard
+      popUpTo/launchSingleTop/restoreState save-state convention). MainActivity's
+      HealthyPantryRoot assembles Scaffold(bottomBar=...) { NavHost } inside the existing
+      HealthyPantryTheme (already applied at root from scaffolding, extended not replaced).
+      androidx.navigation:navigation-compose (2.9.0) added as a new dependency. Periodic worker
+      scheduling confirmed already wired in HealthyPantryApp.onCreate (Phase 10) - not duplicated.
+      PantryViewModel's committedQuantity=0.0 TODO traced again and left deferred (not closed):
+      Pantry/Plan are sibling top-level tabs with independent back stacks, so nav landing did not
+      create a natural shared-ViewModel-scope wiring point - the real fix still needs an
+      Activity-scoped shared component or repository-level cache, the same cross-feature-
+      dependency cost flagged since PR9. New Hilt instrumented-test infra (none existed before):
+      HiltTestRunner (custom AndroidJUnitRunner + HiltTestApplication), di/TestDatabaseModule
+      (@TestInstallIn in-memory AppDatabase replacing DatabaseModule, real repositories/DAOs/
+      use-cases otherwise), AppNavigationSmokeTest (@HiltAndroidTest) covering one golden path:
+      launch -> Pantry tab -> add item -> save -> visible in list -> switch tabs and back ->
+      still visible. README gained an "Overview" and "Run" section; USDA API key docs already
+      existed from Phase 1/5 and needed no changes. Diff ~345 changed lines across 9 files -
+      within the project's proactive-split budget, no split needed. Verified by manual trace only
+      (no JDK/gradle in this sandbox) - traced all four screens reachable from the nav graph,
+      none orphaned.

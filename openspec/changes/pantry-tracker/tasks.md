@@ -89,21 +89,30 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
   `Dispatchers.Main` for a `TestDispatcher`, needed because `viewModelScope` hardcodes
   `Dispatchers.Main.immediate`) for future ViewModel tests (PR9). 6 RED/GREEN test cases in
   `PantryViewModelTest`. Landed on branch `feat/pantry-ui` (cut from `dev`).
-- [ ] 6.2 `PantryListScreen` (Compose, Material 3) — list of pantry items showing name, actual
+- [x] 6.2 `PantryListScreen` (Compose, Material 3) — list of pantry items showing name, actual
   stock, projected stock; swipe/button to delete; FAB to add new item; `hiltViewModel()` to
-  obtain `PantryViewModel`. Not started.
-- [ ] 6.3 `ItemFormScreen` (Compose) — add/edit a `FoodItem`. "Scan barcode" button launching
+  obtain `PantryViewModel`. Landed via PR #10 (`feat(pantry): add PantryListScreen`, commit
+  `47fcc8b`). Corrected 2026-07-12 during Phase 11 apply: this item was left unchecked by the
+  tasks.md reconstruction (see file header) even though the commit and source
+  (`feature/pantry/ui/screen/PantryListScreen.kt`) already existed — verified present and wired
+  into the Phase 11 nav graph before marking complete.
+- [x] 6.3 `ItemFormScreen` (Compose) — add/edit a `FoodItem`. "Scan barcode" button launching
   Google Code Scanner (`GmsBarcodeScanning`) → `NutritionLookupRepository.lookupByBarcode` to
   pre-fill the form (miss → manual-entry mode, per PR5's spec scenario "Barcode not found in
   Open Food Facts"); "Search by name" flow calling `NutritionLookupRepository.searchByName`;
   editable macro fields the user can override, which take precedence over any lookup result once
   touched (spec scenario "Manual macro override always wins", deferred here from PR5 per its
   doc-comment note on `NutritionLookupRepositoryImpl`). Compose UI tests (compile/package only,
-  no emulator in this sandbox — same precedent as PR1's `HarnessInstrumentedSmokeTest`). Not
-  started.
+  no emulator in this sandbox — same precedent as PR1's `HarnessInstrumentedSmokeTest`). Landed
+  via PR #11 (`feat(pantry): add ItemFormScreen`, commit `71ee4f4`, plus follow-up fix
+  `a41a2e1`). Corrected 2026-07-12 during Phase 11 apply — same reconstruction gap as 6.2.
 
 ## Phase 7: Meal-Planning Data (PR7)
-- [ ] 7.1 RED/GREEN `Recipe`/`RecipeIngredient`/`PlanEntry` entities, DAOs, repos (spec: Recipe CRUD, Weekly Plan Assignment).
+- [x] 7.1 RED/GREEN `Recipe`/`RecipeIngredient`/`PlanEntry` entities, DAOs, repos (spec: Recipe CRUD, Weekly Plan Assignment).
+  Landed via PR #12 (`feat(planning): add Recipe/RecipeIngredient/PlanEntry entities, DAOs, and
+  repositories`, commit `82891de`) — verified present in `AppDatabase` (v2 schema:
+  `RecipeEntity`/`RecipeIngredientEntity`/`PlanEntryEntity` + their DAOs). Corrected 2026-07-12
+  during Phase 11 apply — same reconstruction gap as 6.2/6.3 (see also state.yaml's PR3-PR7 note).
 
 ## Phase 8: Planning + Macro Domain (PR8)
 - [x] 8.1 RED/GREEN `ComputeWeeklyNeedsUseCase`, `ComputeMacroTotalsUseCase`, mark-eaten use-case (spec: Item-to-Day Macro Rollup).
@@ -213,5 +222,55 @@ Landed as commit `d9de8c1` on branch `chore/scaffold-project` → merged to `dev
     unilaterally; left to the reviewer/orchestrator to decide whether to split in review or accept
     as `size:exception`.
 
-## Phase 11: Integration (PR11)
-- [ ] 11.1 Nav graph + bottom nav, theme, schedule periodic worker; e2e smoke test; README USDA key docs.
+## Phase 11: Integration (PR11) — ✅ COMPLETE (pending merge)
+- [x] 11.1 Nav graph + bottom nav, theme, schedule periodic worker; e2e smoke test; README USDA key docs.
+  - Landed on branch `feat/app-integration` (cut from `dev`).
+  - `app/navigation/Destinations.kt` (route constants + `BOTTOM_NAV_DESTINATIONS`),
+    `HealthyPantryNavHost.kt` (single `NavHost`: nested `pantry_graph` route hosting
+    `PantryListScreen` -> `ItemFormScreen` add-flow, plus top-level `recipes`/`plan` routes for
+    `RecipeScreen`/`WeekPlanScreen`, which already own an internal list/form toggle and needed no
+    further nesting), `HealthyPantryBottomBar.kt` (Material3 `NavigationBar`, standard
+    `popUpTo(graph.findStartDestination()) { saveState = true }` +
+    `launchSingleTop`/`restoreState` convention). `MainActivity.kt`'s `HealthyPantryRoot` composable
+    now assembles `Scaffold(bottomBar = HealthyPantryBottomBar) { HealthyPantryNavHost(...) }`
+    inside the existing `HealthyPantryTheme` wrapper (theme was already applied at root from
+    scaffolding — extended, not replaced; no new Color.kt/Type.kt needed since `Theme.kt` already
+    provides light/dark `MaterialTheme` color schemes).
+  - `androidx.navigation:navigation-compose` (2.9.0) added to `libs.versions.toml`/
+    `app/build.gradle.kts` — was not previously a dependency.
+  - Periodic worker scheduling: confirmed already wired in `HealthyPantryApp.onCreate`
+    (`scheduleExpiryCheckWorker()`, Phase 10) — not duplicated here.
+  - `committedQuantity = 0.0` TODO on `PantryViewModel` (documented since PR6, revisited in PR9):
+    traced again but **left deferred, not closed**. The Pantry and Plan tabs are sibling
+    top-level bottom-nav destinations with independent save/restore-state back stacks, not nested
+    under one shared parent nav-graph entry, so there is no natural `NavBackStackEntry` to scope a
+    shared ViewModel to (unlike `ItemFormScreen`+`PantryListScreen` sharing the Pantry graph). A
+    real fix still needs either an Activity-scoped shared component or a repository-level cache
+    reproducing `PlanViewModel.resolveWeeklyNeeds`'s reactive per-recipe resolution — the same
+    cross-feature-dependency/duplication cost flagged in PR9, unchanged by nav existing. Comment
+    updated on `PantryViewModel` to record this Phase 11 re-evaluation.
+  - e2e smoke test: new Hilt instrumented-test infra (none existed before) —
+    `HiltTestRunner` (custom `AndroidJUnitRunner` swapping in `HiltTestApplication`, wired via
+    `testInstrumentationRunner`), `di/TestDatabaseModule` (`@TestInstallIn` in-memory `AppDatabase`
+    replacing `DatabaseModule`, every repository/DAO/use-case above it still the real production
+    implementation), and `AppNavigationSmokeTest` (`@HiltAndroidTest`): launch -> land on Pantry
+    tab (empty state) -> tap `+` -> add-item form -> fill name only, save (macros default to 0.0)
+    -> item visible back on the list -> switch to Recipes tab and back to Pantry -> item still
+    visible (save/restore-state). One golden path, not exhaustive — per-feature Compose tests
+    (`PantryListScreenTest`/`RecipeScreenTest`/`WeekPlanScreenTest`) already cover screen-level
+    behavior against stateless `*Content` composables.
+  - `hilt-android-testing` (androidTestImplementation) + `kspAndroidTest(hilt-compiler)` added.
+  - README: added a project "Overview" section (three tabs, expiry reminders) and a "Run" section
+    (`./gradlew installDebug` / Android Studio); USDA FoodData Central API key docs already existed
+    from Phase 1/5 scaffolding (`local.properties` -> `BuildConfig.USDA_FDC_API_KEY`,
+    `DEMO_KEY` fallback) and needed no changes — confirmed accurate against
+    `NutritionNetworkModule`/`app/build.gradle.kts`.
+  - Verified by manual trace only (no JDK/gradle in this sandbox): traced every nav route to
+    confirm all four existing screens (`PantryListScreen`, `ItemFormScreen`, `RecipeScreen`,
+    `WeekPlanScreen`) are reachable — none orphaned.
+  - Diff size: ~345 changed lines across 9 files (267 new-file lines + 68/10 modified
+    additions/deletions) — within this project's ~400-450-line proactive-split precedent, no
+    split needed.
+
+This is the final phase of the pantry-tracker v1 tasks list — all 11 phases are now implemented
+(pending this PR's merge to `dev`/`main`).

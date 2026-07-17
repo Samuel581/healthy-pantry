@@ -1,7 +1,21 @@
 # Healthy Pantry
 
 Android app (Kotlin + Jetpack Compose) for tracking pantry stock, planning meals, and
-staying on top of macros — see `sdd/pantry-tracker/*` artifacts for full spec/design/tasks.
+staying on top of macros — see `openspec/changes/pantry-tracker/*` for full spec/design/tasks.
+
+## Overview
+
+Single-module Android app (Kotlin, Jetpack Compose, Material 3, Hilt, Room, WorkManager).
+Three bottom-nav tabs host the app's features:
+
+- **Pantry** — food items and stock batches (barcode scan or manual entry, with USDA/Open Food
+  Facts nutrition lookup), showing both actual and projected stock.
+- **Recipes** — recipes and their ingredients.
+- **Plan** — this week's meal plan (assign a recipe or quick-add a raw item per day/meal slot,
+  mark entries eaten), plus a weekly macro rollup.
+
+A daily background check (WorkManager) surfaces pantry items nearing or past their expiry date
+via a local notification and an in-app banner.
 
 ## Setup
 
@@ -33,3 +47,14 @@ Open Food Facts (barcode lookup) requires no key.
 ./gradlew test                          # JVM unit tests
 ./gradlew connectedDebugAndroidTest      # instrumented tests (requires a device/emulator)
 ```
+
+## Run
+
+With a device connected or an emulator running:
+
+```bash
+./gradlew installDebug
+```
+
+or open the project in Android Studio and run the `app` configuration. The app launches
+directly on the Pantry tab; use the bottom navigation bar to switch to Recipes or Plan.

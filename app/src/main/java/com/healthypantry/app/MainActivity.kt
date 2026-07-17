@@ -11,12 +11,14 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.navigation.compose.rememberNavController
+import com.healthypantry.app.navigation.HealthyPantryBottomBar
+import com.healthypantry.app.navigation.HealthyPantryNavHost
 import com.healthypantry.app.theme.HealthyPantryTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -27,20 +29,25 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             HealthyPantryTheme {
-                HealthyPantryScaffold()
+                HealthyPantryRoot()
             }
         }
     }
 }
 
+/**
+ * App root: hosts the bottom-nav [Scaffold] (`HealthyPantryBottomBar` + `HealthyPantryNavHost`,
+ * see `app/navigation`) wiring together the Pantry/Recipes/Plan tabs (design.md "app/ ...
+ * nav, theme"; proposal.md "Scaffold + bottom NavigationBar").
+ */
 @Composable
-private fun HealthyPantryScaffold() {
+private fun HealthyPantryRoot() {
     RequestNotificationPermission()
-    Scaffold { innerPadding ->
-        Text(
-            text = "Healthy Pantry",
-            modifier = Modifier.padding(innerPadding),
-        )
+    val navController = rememberNavController()
+    Scaffold(
+        bottomBar = { HealthyPantryBottomBar(navController) },
+    ) { innerPadding ->
+        HealthyPantryNavHost(navController = navController, modifier = Modifier.padding(innerPadding))
     }
 }
 
