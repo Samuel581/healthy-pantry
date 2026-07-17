@@ -107,7 +107,7 @@ class ItemFormViewModelTest {
         viewModel.onCaloriesChanged("4.5")
         val item = viewModel.buildFoodItem()
         assertEquals("Homemade granola", item.name)
-        assertEquals(4.5, item.caloriesPerUnit, 0.0001)
+        assertEquals(4.5, item.caloriesPerUnit!!, 0.0001)
     }
 
     @Test
@@ -144,7 +144,7 @@ class ItemFormViewModelTest {
         assertTrue(state.lookupError!!.contains("rate-limited", ignoreCase = true))
 
         viewModel.onFatChanged("0.3")
-        assertEquals(0.3, viewModel.buildFoodItem().fatGramsPerUnit, 0.0001)
+        assertEquals(0.3, viewModel.buildFoodItem().fatGramsPerUnit!!, 0.0001)
     }
 
     @Test
@@ -157,7 +157,7 @@ class ItemFormViewModelTest {
         viewModel.onCaloriesChanged("1.0")
 
         val item = viewModel.buildFoodItem()
-        assertEquals(1.0, item.caloriesPerUnit, 0.0001)
+        assertEquals(1.0, item.caloriesPerUnit!!, 0.0001)
     }
 
     @Test
@@ -207,6 +207,34 @@ class ItemFormViewModelTest {
         val item = viewModel.buildFoodItem(existingId = 9L)
         assertEquals(9L, item.id)
         assertEquals("Rice", item.name)
-        assertEquals(1.3, item.caloriesPerUnit, 0.0001)
+        assertEquals(1.3, item.caloriesPerUnit!!, 0.0001)
+    }
+
+    @Test
+    fun `loadExisting seeds an unknown macro as a blank field, not the literal text null, and it round-trips back to null on save`() = runTest {
+        // Given a previously-saved item where fat was never entered (spec "Missing macro data on an item")
+        val repository = FakeNutritionLookupRepository(barcodeResult = Result.failure(NutritionLookupError.NotFound))
+        val viewModel = buildViewModel(repository)
+        val existing = FoodItem(
+            id = 11L,
+            name = "Homemade granola",
+            canonicalUnit = MeasurementUnit.GRAM,
+            source = FoodItemSource.MANUAL,
+            caloriesPerUnit = 4.5,
+            proteinGramsPerUnit = 0.1,
+            carbsGramsPerUnit = 0.6,
+            fatGramsPerUnit = null,
+        )
+
+        // When the edit form is seeded from it
+        viewModel.loadExisting(existing)
+
+        // Then the fat field renders blank, not the string "null"
+        assertEquals("", viewModel.uiState.value.fatGramsPerUnit)
+
+        // And saving without touching that field round-trips it back to null, not 0.0
+        val resaved = viewModel.buildFoodItem(existingId = 11L)
+        assertNull(resaved.fatGramsPerUnit)
+        assertEquals(4.5, resaved.caloriesPerUnit!!, 0.0001)
     }
 }

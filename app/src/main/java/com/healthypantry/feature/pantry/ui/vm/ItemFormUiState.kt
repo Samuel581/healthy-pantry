@@ -68,19 +68,21 @@ private fun ItemFormUiState.prefilledMacro(field: ItemFormField, current: String
 }
 
 /**
- * Builds the [FoodItem] to persist from this form state. [FoodItem]'s macro fields are
- * non-nullable [Double]s (no `manualOverride`/nullable-macro columns exist on the entity), so a
- * blank or unparseable macro field saves as `0.0`.
+ * Builds the [FoodItem] to persist from this form state. [FoodItem]'s macro fields are nullable
+ * [Double]s, so a blank or unparseable macro field saves as `null` ("unknown") instead of being
+ * coerced to `0.0` — this preserves the "0 macros" vs. "unknown macros" distinction all the way
+ * to persistence (spec "Item-to-Day Macro Rollup" -> "Missing macro data on an item"). A field
+ * the user actually typed `0`/`0.0` into still parses to a real, known `0.0`.
  */
 fun ItemFormUiState.toFoodItem(id: Long = 0L): FoodItem = FoodItem(
     id = id,
     name = name,
     canonicalUnit = canonicalUnit,
     source = source,
-    caloriesPerUnit = caloriesPerUnit.toDoubleOrNull() ?: 0.0,
-    proteinGramsPerUnit = proteinGramsPerUnit.toDoubleOrNull() ?: 0.0,
-    carbsGramsPerUnit = carbsGramsPerUnit.toDoubleOrNull() ?: 0.0,
-    fatGramsPerUnit = fatGramsPerUnit.toDoubleOrNull() ?: 0.0,
+    caloriesPerUnit = caloriesPerUnit.toDoubleOrNull(),
+    proteinGramsPerUnit = proteinGramsPerUnit.toDoubleOrNull(),
+    carbsGramsPerUnit = carbsGramsPerUnit.toDoubleOrNull(),
+    fatGramsPerUnit = fatGramsPerUnit.toDoubleOrNull(),
     barcode = barcode,
     externalSourceId = externalSourceId,
 )

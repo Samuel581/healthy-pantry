@@ -12,8 +12,15 @@ dag:
   design: done
   tasks: done
   apply: done   # all 11 phases implemented; PR11 (feat/app-integration) pending merge
-  verify: pending
-  archive: pending
+  verify: blocked   # 2026-07-16: verify-report.md written. Verdict PASS WITH GAPS -
+                     # 1 CRITICAL (macro-tracking spec scenario "Missing macro data on
+                     # an item" has zero implementation/test - not previously documented
+                     # as deferred, unlike committedQuantity). No JDK/gradle in this
+                     # sandbox, so verification is source-traced (34 test files read in
+                     # full), not runtime-executed - same constraint as every apply phase.
+                     # See verify-report.md for full compliance matrix and 2 WARNINGs.
+  archive: pending   # blocked on the CRITICAL finding above until it is either
+                     # implemented or explicitly descoped/deferred like committedQuantity.
 
 delivery_strategy: ask-on-risk
 chain_strategy: serial   # each branch cut from dev only after previous PR merges to dev; every PR targets dev
@@ -63,6 +70,32 @@ apply_progress:
       .InvalidRecipeServings typed failure. New RED/GREEN tests added to
       ComputeMacroTotalsUseCaseTest, ComputeWeeklyNeedsUseCaseTest, MarkPlanEntryEatenUseCaseTest.
       Verified by manual trace only (no JDK/gradle in this sandbox).
+  - pr: 8.2
+    work_unit: "Fix CRITICAL verify-report.md gap - macro-tracking 'Missing macro data on an item' (null-vs-zero macro completeness)"
+    branch: fix/macro-data-completeness
+    status: implemented_pending_review
+    tasks_done: ["8.2"]
+    notes: >
+      FoodItem/FoodItemEntity macro fields widened Double -> Double? (AppDatabase bumped to
+      version=3, no Migration, same greenfield-DB precedent as the v1->v2 bump).
+      ItemFormUiState.toFoodItem no longer coerces a blank/unparseable macro field to 0.0 - it
+      saves null ("unknown"). ItemFormViewModel.loadExisting fixed in the same pass to render a
+      null macro as a blank field instead of the literal string "null" on edit-load. MacroTotals
+      gained isComplete: Boolean (ANDed through `plus`, so computeForRecipe/computeDayTotal's
+      existing += accumulation propagates incompleteness with no changes to those two methods);
+      ComputeMacroTotalsUseCase.computeForQuickAdd treats an unknown macro as 0.0 numerically but
+      sets isComplete=false. Traced PantryViewModel/PlanViewModel/WeekPlanScreen/RecipeViewModel
+      per task instruction: confirmed (CodeGraph blast-radius + grep) that ComputeMacroTotalsUseCase
+      /MacroTotals have zero production callers outside their own package yet, so no UI layer
+      needed a fix to avoid re-coercing the new signal to zero. ComputeWeeklyNeedsUseCase
+      confirmed unaffected (rolls up quantities, not macros). RED/GREEN tests added to
+      ItemFormUiStateTest, ItemFormViewModelTest, ComputeMacroTotalsUseCaseTest; 7 pre-existing
+      call sites elsewhere (FoodItemRepositoryTest, PantryViewModelTest) that read a macro field
+      straight into assertEquals(double,double,delta) fixed with !! unwraps to keep compiling.
+      Verified by manual trace only (no JDK/gradle in this sandbox) - does not itself change
+      dag.verify; sdd-verify re-runs to confirm. Out of scope for this pass per explicit
+      instruction: SystemExpiryNotifier permission-denied-branch test gap (WARNING) and
+      design.md's stale v1->v2 "migration" wording (WARNING) — both left untouched.
   - pr: 9
     work_unit: "Planning UI - RecipeViewModel/RecipeScreen, PlanViewModel/WeekPlanScreen"
     branch: feat/planning-ui

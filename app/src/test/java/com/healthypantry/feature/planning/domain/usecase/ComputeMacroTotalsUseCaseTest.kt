@@ -252,4 +252,208 @@ class ComputeMacroTotalsUseCaseTest {
         val totals = MacroTotals(1.0, 2.0, 3.0, 4.0)
         assertEquals(totals, MacroTotals.ZERO + totals)
     }
+
+    // Spec: "Item-to-Day Macro Rollup" -> "Missing macro data on an item": a FoodItem manually
+    // created without macro values must be distinguishable from one with a verified 0.0, and that
+    // distinction must be visible on the rollup result rather than silently absorbed as zero.
+
+    @Test
+    fun `computeForQuickAdd flags the total as incomplete when the food item has an unknown macro`() {
+        // Given a manually created item where fat was never entered (null, not 0.0)
+        val homemadeGranola = FoodItem(
+            id = 4L,
+            name = "Homemade granola",
+            canonicalUnit = MeasurementUnit.GRAM,
+            source = FoodItemSource.MANUAL,
+            caloriesPerUnit = 4.5,
+            proteinGramsPerUnit = 0.1,
+            carbsGramsPerUnit = 0.6,
+            fatGramsPerUnit = null,
+        )
+
+        // When 100g is quick-added
+        val totals = useCase.computeForQuickAdd(homemadeGranola, quantity = 100.0)
+
+        // Then the known macros still sum normally...
+        assertEquals(450.0, totals.calories, 0.0001)
+        assertEquals(10.0, totals.proteinGrams, 0.0001)
+        assertEquals(60.0, totals.carbsGrams, 0.0001)
+        // ...the unknown macro contributes zero to the number rather than failing...
+        assertEquals(0.0, totals.fatGrams, 0.0001)
+        // ...but the total is explicitly flagged incomplete, not silently reported as exact.
+        assertTrue(!totals.isComplete)
+    }
+
+    @Test
+    fun `computeForQuickAdd reports a complete total when every macro field is known, including a real zero`() {
+        // "Chicken breast" has a verified 0.0 carbs (not unknown) - see fixture above.
+        val totals = useCase.computeForQuickAdd(chicken(), quantity = 100.0)
+
+        assertTrue(totals.isComplete)
+    }
+
+    @Test
+    fun `computeDayTotal flags the day as incomplete when any contributing entry has an unknown macro`() {
+        // Given a day has a fully-known quick-add (banana) plus a quick-add with an unknown macro
+        val banana = FoodItem(
+            id = 3L,
+            name = "Banana",
+            canonicalUnit = MeasurementUnit.PIECE,
+            source = FoodItemSource.MANUAL,
+            caloriesPerUnit = 89.0,
+            proteinGramsPerUnit = 1.1,
+            carbsGramsPerUnit = 22.8,
+            fatGramsPerUnit = 0.3,
+        )
+        val homemadeGranola = FoodItem(
+            id = 4L,
+            name = "Homemade granola",
+            canonicalUnit = MeasurementUnit.GRAM,
+            source = FoodItemSource.MANUAL,
+            caloriesPerUnit = 4.5,
+            proteinGramsPerUnit = null,
+            carbsGramsPerUnit = 0.6,
+            fatGramsPerUnit = 0.2,
+        )
+        val entries = listOf(
+            ResolvedDayEntry.QuickAddEntry(banana, quantity = 1.0),
+            ResolvedDayEntry.QuickAddEntry(homemadeGranola, quantity = 50.0),
+        )
+
+        // When the day's total is computed
+        val result = useCase.computeDayTotal(entries, conversionFactorsByFoodItemId = emptyMap())
+
+        // Then the day total is flagged incomplete, propagated from the one unknown-macro entry
+        assertTrue(result is Result.Success)
+        assertTrue(!(result as Result.Success).value.isComplete)
+    }
+
+    @Test
+    fun `computeDayTotal reports a complete day when every contributing entry has fully-known macros`() {
+        val banana = FoodItem(
+            id = 3L,
+            name = "Banana",
+            canonicalUnit = MeasurementUnit.PIECE,
+            source = FoodItemSource.MANUAL,
+            caloriesPerUnit = 89.0,
+            proteinGramsPerUnit = 1.1,
+            carbsGramsPerUnit = 22.8,
+            fatGramsPerUnit = 0.3,
+        )
+        val entries = listOf(ResolvedDayEntry.QuickAddEntry(banana, quantity = 1.0))
+
+        val result = useCase.computeDayTotal(entries, conversionFactorsByFoodItemId = emptyMap())
+
+        assertTrue(result is Result.Success)
+        assertTrue((result as Result.Success).value.isComplete)
+    }
+
+    @Test
+    fun `computeForRecipe flags the total as incomplete when an ingredient's food item has an unknown macro`() {
+        // Given a recipe's only ingredient is a manually created item where fat was never
+        // entered (null, not 0.0)
+        val homemadeGranola = FoodItem(
+            id = 4L,
+            name = "Homemade granola",
+            canonicalUnit = MeasurementUnit.GRAM,
+            source = FoodItemSource.MANUAL,
+            caloriesPerUnit = 4.5,
+            proteinGramsPerUnit = 0.1,
+            carbsGramsPerUnit = 0.6,
+            fatGramsPerUnit = null,
+        )
+        val recipe = RecipeWithIngredients(
+            recipe = bowl(servings = 1),
+            ingredients = listOf(
+                RecipeIngredientDetail(
+                    ingredient = RecipeIngredient(recipeId = 10L, foodItemId = 4L, quantity = 100.0, unit = MeasurementUnit.GRAM, sortOrder = 0),
+                    foodItem = homemadeGranola,
+                ),
+            ),
+        )
+
+        // When computed for the recipe's own 1 serving (ratio 1.0, no conversion needed)
+        val result = useCase.computeForRecipe(recipe, requestedServings = 1.0, conversionFactorsByFoodItemId = emptyMap())
+
+        // Then the known macros still sum normally (450 kcal / 10g protein / 60g carbs)...
+        assertTrue(result is Result.Success)
+        val totals = (result as Result.Success).value
+        assertEquals(450.0, totals.calories, 0.0001)
+        assertEquals(10.0, totals.proteinGrams, 0.0001)
+        assertEquals(60.0, totals.carbsGrams, 0.0001)
+        assertEquals(0.0, totals.fatGrams, 0.0001)
+        // ...but the recipe total is explicitly flagged incomplete, propagated from the
+        // ingredient's unknown macro through the shared computeForQuickAdd/plus accumulation.
+        assertTrue(!totals.isComplete)
+    }
+
+    @Test
+    fun `computeForRecipe reports a complete total when every ingredient's macros are fully known`() {
+        // Given "Bowl" has 200g Rice + 150g Chicken, both with fully-known macro fields
+        val recipe = RecipeWithIngredients(
+            recipe = bowl(servings = 2),
+            ingredients = listOf(
+                RecipeIngredientDetail(
+                    ingredient = RecipeIngredient(recipeId = 10L, foodItemId = 1L, quantity = 200.0, unit = MeasurementUnit.GRAM, sortOrder = 0),
+                    foodItem = rice(),
+                ),
+                RecipeIngredientDetail(
+                    ingredient = RecipeIngredient(recipeId = 10L, foodItemId = 2L, quantity = 150.0, unit = MeasurementUnit.GRAM, sortOrder = 1),
+                    foodItem = chicken(),
+                ),
+            ),
+        )
+
+        val result = useCase.computeForRecipe(recipe, requestedServings = 2.0, conversionFactorsByFoodItemId = emptyMap())
+
+        assertTrue(result is Result.Success)
+        assertTrue((result as Result.Success).value.isComplete)
+    }
+
+    @Test
+    fun `computeDayTotal flags the day as incomplete when a recipe entry's ingredient has an unknown macro`() {
+        // Given a day has a recipe entry whose only ingredient has an unknown macro, plus a
+        // fully-known quick-add (banana) — proving propagation through the recipe path
+        // specifically, not just quick-add
+        val homemadeGranola = FoodItem(
+            id = 4L,
+            name = "Homemade granola",
+            canonicalUnit = MeasurementUnit.GRAM,
+            source = FoodItemSource.MANUAL,
+            caloriesPerUnit = 4.5,
+            proteinGramsPerUnit = 0.1,
+            carbsGramsPerUnit = 0.6,
+            fatGramsPerUnit = null,
+        )
+        val snackRecipe = RecipeWithIngredients(
+            recipe = bowl(servings = 1),
+            ingredients = listOf(
+                RecipeIngredientDetail(
+                    ingredient = RecipeIngredient(recipeId = 10L, foodItemId = 4L, quantity = 100.0, unit = MeasurementUnit.GRAM, sortOrder = 0),
+                    foodItem = homemadeGranola,
+                ),
+            ),
+        )
+        val banana = FoodItem(
+            id = 3L,
+            name = "Banana",
+            canonicalUnit = MeasurementUnit.PIECE,
+            source = FoodItemSource.MANUAL,
+            caloriesPerUnit = 89.0,
+            proteinGramsPerUnit = 1.1,
+            carbsGramsPerUnit = 22.8,
+            fatGramsPerUnit = 0.3,
+        )
+        val entries = listOf(
+            ResolvedDayEntry.RecipeEntry(snackRecipe, requestedServings = 1.0),
+            ResolvedDayEntry.QuickAddEntry(banana, quantity = 1.0),
+        )
+
+        // When the day's total is computed
+        val result = useCase.computeDayTotal(entries, conversionFactorsByFoodItemId = emptyMap())
+
+        // Then it's flagged incomplete, propagated from the recipe entry's unknown macro
+        assertTrue(result is Result.Success)
+        assertTrue(!(result as Result.Success).value.isComplete)
+    }
 }
