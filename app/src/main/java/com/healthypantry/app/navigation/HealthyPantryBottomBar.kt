@@ -17,7 +17,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
  * `restoreState = true` — switching tabs preserves each tab's own back stack/scroll position
  * instead of recreating it from scratch on every tap.
  *
- * Uses a plain [Text] label as each tab's "icon" slot (first letter of the tab name) rather than
+ * Uses a plain [Text] label as each tab's "icon" slot (first two letters of the tab name, not
+ * just one — "Pantry" and "Plan" both start with 'P' and would otherwise collide) rather than
  * pulling in a Material icon library, matching this project's existing convention of textual
  * affordances over icon assets (e.g. `PantryListContent`'s `+` FAB, `RecipeScreen`'s buttons).
  */
@@ -38,7 +39,7 @@ fun HealthyPantryBottomBar(navController: NavHostController) {
                         restoreState = true
                     }
                 },
-                icon = { Text(item.label.take(1)) },
+                icon = { Text(item.label.take(2)) },
                 label = { Text(item.label) },
             )
         }
