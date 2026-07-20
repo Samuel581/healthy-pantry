@@ -26,14 +26,14 @@ class UsdaNutritionSource @Inject constructor(
     private val api: UsdaFoodDataCentralApi,
 ) {
 
-    suspend fun searchByName(query: String): Result<NutritionResult, NutritionLookupError> =
+    suspend fun searchByName(query: String): Result<List<NutritionResult>, NutritionLookupError> =
         try {
             val response = api.searchFoods(query = query, apiKey = BuildConfig.USDA_FDC_API_KEY)
-            val food = response.foods.firstOrNull()
-            if (food == null) {
+            val foods = response.foods
+            if (foods.isEmpty()) {
                 Result.failure(NutritionLookupError.NotFound)
             } else {
-                Result.success(food.toDomain())
+                Result.success(foods.map { it.toDomain() })
             }
         } catch (e: HttpException) {
             if (e.code() == 429) {

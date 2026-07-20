@@ -50,7 +50,7 @@ class UsdaNutritionSourceTest {
     }
 
     @Test
-    fun `searchByName returns a NutritionResult for the best match`() = runTest {
+    fun `searchByName returns a list of results`() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -75,7 +75,7 @@ class UsdaNutritionSourceTest {
 
         val result = source.searchByName("raw broccoli")
 
-        val value = result.getOrNull()
+        val value = result.getOrNull()?.firstOrNull()
         assertEquals("Broccoli, raw", value?.name)
         assertEquals(34.0, value?.caloriesPer100 ?: -1.0, 0.0001)
         assertEquals(2.82, value?.proteinGramsPer100 ?: -1.0, 0.0001)
@@ -146,7 +146,7 @@ class UsdaNutritionSourceTest {
 
         val result = source.searchByName("mystery ingredient")
 
-        val value = result.getOrNull()
+        val value = result.getOrNull()?.firstOrNull()
         assertEquals(120.0, value?.caloriesPer100 ?: -1.0, 0.0001)
         assertEquals(null, value?.proteinGramsPer100)
         assertEquals(null, value?.carbsGramsPer100)

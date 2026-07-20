@@ -44,7 +44,7 @@ class ItemFormViewModelTest {
 
     private class FakeNutritionLookupRepository(
         private val barcodeResult: Result<NutritionResult, NutritionLookupError>,
-        private val searchResult: Result<NutritionResult, NutritionLookupError> = barcodeResult,
+        private val searchResult: Result<List<NutritionResult>, NutritionLookupError> = Result.success(emptyList()),
     ) : NutritionLookupRepository {
         var lastBarcodeQueried: String? = null
         var lastNameQueried: String? = null
@@ -54,7 +54,7 @@ class ItemFormViewModelTest {
             return barcodeResult
         }
 
-        override suspend fun searchByName(name: String): Result<NutritionResult, NutritionLookupError> {
+        override suspend fun searchByName(name: String): Result<List<NutritionResult>, NutritionLookupError> {
             lastNameQueried = name
             return searchResult
         }
@@ -111,10 +111,10 @@ class ItemFormViewModelTest {
     }
 
     @Test
-    fun `onUsdaSearch prefills fields on success`() = runTest {
+    fun `onUsdaSearch updates searchResults on success`() = runTest {
         val repository = FakeNutritionLookupRepository(
             barcodeResult = Result.failure(NutritionLookupError.NotFound),
-            searchResult = Result.success(bananaResult()),
+            searchResult = Result.success(listOf(bananaResult())),
         )
         val viewModel = buildViewModel(repository)
 
@@ -123,9 +123,21 @@ class ItemFormViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals("banana raw", repository.lastNameQueried)
+        assertEquals(1, state.searchResults.size)
+        assertEquals("Banana, raw", state.searchResults.first().name)
+    }
+
+    @Test
+    fun `onResultSelected prefills fields and clears searchResults`() = runTest {
+        val repository = FakeNutritionLookupRepository(barcodeResult = Result.failure(NutritionLookupError.NotFound))
+        val viewModel = buildViewModel(repository)
+        val result = bananaResult()
+
+        viewModel.onResultSelected(result)
+
+        val state = viewModel.uiState.value
         assertEquals("Banana, raw", state.name)
-        // FoodItemSource has no USDA-specific variant - USDA-search-assisted entry saves as MANUAL.
-        assertEquals(FoodItemSource.MANUAL, state.source)
+        assertEquals(0, state.searchResults.size)
     }
 
     @Test
@@ -167,7 +179,7 @@ class ItemFormViewModelTest {
                 throw IllegalStateException("boom")
             }
 
-            override suspend fun searchByName(name: String): Result<NutritionResult, NutritionLookupError> {
+            override suspend fun searchByName(name: String): Result<List<NutritionResult>, NutritionLookupError> {
                 throw IllegalStateException("boom")
             }
         }

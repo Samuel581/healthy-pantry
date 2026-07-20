@@ -17,7 +17,7 @@ interface NutritionLookupRepository {
     suspend fun lookupByBarcode(barcode: String): Result<NutritionResult, NutritionLookupError>
 
     /** Delegates to [UsdaNutritionSource]. */
-    suspend fun searchByName(name: String): Result<NutritionResult, NutritionLookupError>
+    suspend fun searchByName(name: String): Result<List<NutritionResult>, NutritionLookupError>
 }
 
 /**
@@ -50,6 +50,6 @@ class NutritionLookupRepositoryImpl @Inject constructor(
     override suspend fun lookupByBarcode(barcode: String): Result<NutritionResult, NutritionLookupError> =
         openFoodFactsSource.lookupByBarcode(barcode)
 
-    override suspend fun searchByName(name: String): Result<NutritionResult, NutritionLookupError> =
+    override suspend fun searchByName(name: String): Result<List<NutritionResult>, NutritionLookupError> =
         usdaSource.searchByName(name)
 }

@@ -35,6 +35,7 @@ data class ItemFormUiState(
     val usdaQuery: String = "",
     val isLookingUp: Boolean = false,
     val lookupError: String? = null,
+    val searchResults: List<NutritionResult> = emptyList(),
 )
 
 /**

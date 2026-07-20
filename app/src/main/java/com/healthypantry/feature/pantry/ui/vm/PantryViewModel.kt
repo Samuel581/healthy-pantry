@@ -129,6 +129,8 @@ class PantryViewModel @Inject constructor(
 
     fun deleteItem(item: FoodItem) = launchOnIo { foodItemRepository.delete(item) }
 
+    fun getItem(id: Long): Flow<FoodItem?> = foodItemRepository.observeById(id)
+
     fun addStockBatch(batch: StockBatch) = launchOnIo { stockBatchRepository.upsert(batch) }
 
     private fun launchOnIo(block: suspend () -> Unit) {

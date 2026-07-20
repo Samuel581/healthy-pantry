@@ -1,5 +1,6 @@
 package com.healthypantry.feature.pantry.ui.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,6 +50,7 @@ import com.healthypantry.feature.pantry.ui.vm.PantryViewModel
 @Composable
 fun PantryListScreen(
     onAddItem: () -> Unit,
+    onEditItem: (FoodItem) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: PantryViewModel = hiltViewModel(),
     expiryAlertViewModel: ExpiryAlertViewModel = hiltViewModel(),
@@ -68,6 +69,7 @@ fun PantryListScreen(
         uiState = uiState,
         expiringItems = expiryUiState.expiringItems,
         onAddItem = onAddItem,
+        onEditItem = onEditItem,
         onDeleteItem = viewModel::deleteItem,
         modifier = modifier,
         snackbarHostState = snackbarHostState,
@@ -84,6 +86,7 @@ fun PantryListScreen(
 fun PantryListContent(
     uiState: PantryUiState,
     onAddItem: () -> Unit,
+    onEditItem: (FoodItem) -> Unit,
     onDeleteItem: (FoodItem) -> Unit,
     modifier: Modifier = Modifier,
     expiringItems: List<ExpiringBatch> = emptyList(),
@@ -105,6 +108,7 @@ fun PantryListContent(
                 uiState.items.isEmpty() -> EmptyState(modifier = Modifier.weight(1f))
                 else -> PantryItemList(
                     items = uiState.items,
+                    onEditItem = onEditItem,
                     onDeleteItem = onDeleteItem,
                     modifier = Modifier.weight(1f),
                 )
@@ -141,12 +145,17 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 @Composable
 private fun PantryItemList(
     items: List<PantryItemUi>,
+    onEditItem: (FoodItem) -> Unit,
     onDeleteItem: (FoodItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(modifier = modifier.fillMaxSize()) {
         items(items = items, key = { it.foodItem.id }) { item ->
-            PantryItemRow(item = item, onDelete = { onDeleteItem(item.foodItem) })
+            PantryItemRow(
+                item = item,
+                onEdit = { onEditItem(item.foodItem) },
+                onDelete = { onDeleteItem(item.foodItem) }
+            )
         }
     }
 }
@@ -154,12 +163,14 @@ private fun PantryItemList(
 @Composable
 private fun PantryItemRow(
     item: PantryItemUi,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clickable(onClick = onEdit)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,

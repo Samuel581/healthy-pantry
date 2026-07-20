@@ -7,6 +7,7 @@ import com.healthypantry.core.common.Result
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.nutrition.data.NutritionLookupRepository
 import com.healthypantry.feature.nutrition.domain.model.NutritionLookupError
+import com.healthypantry.feature.nutrition.domain.model.NutritionResult
 import com.healthypantry.feature.pantry.domain.model.FoodItem
 import com.healthypantry.feature.pantry.domain.model.FoodItemSource
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -104,21 +105,24 @@ class ItemFormViewModel @Inject constructor(
      * error is surfaced but manual entry always remains available.
      */
     fun onUsdaSearch(query: String) {
-        _uiState.update { it.copy(isLookingUp = true, lookupError = null) }
+        _uiState.update { it.copy(isLookingUp = true, lookupError = null, searchResults = emptyList()) }
         launchLookup {
             when (val result = nutritionLookupRepository.searchByName(query)) {
                 is Result.Success -> _uiState.update {
-                    // USDA-sourced macros still count as manually-initiated entry: FoodItemSource
-                    // has no dedicated USDA variant (see FoodItem domain model), and adding one
-                    // would require a schema/migration change out of scope for this PR.
-                    it.prefillFrom(result.value, source = FoodItemSource.MANUAL)
-                        .copy(isLookingUp = false)
+                    it.copy(isLookingUp = false, searchResults = result.value)
                 }
 
                 is Result.Failure -> _uiState.update {
                     it.copy(isLookingUp = false, lookupError = result.error.toUserMessage())
                 }
             }
+        }
+    }
+
+    fun onResultSelected(result: NutritionResult) {
+        _uiState.update {
+            it.prefillFrom(result, source = FoodItemSource.MANUAL)
+                .copy(searchResults = emptyList())
         }
     }
 

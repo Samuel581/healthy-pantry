@@ -96,7 +96,8 @@ class NutritionLookupRepositoryTest {
 
         // Then the repository returns USDA's match
         val value = result.getOrNull()
-        assertEquals("Broccoli, raw", value?.name)
-        assertEquals(NutritionSource.USDA_FOOD_DATA_CENTRAL, value?.source)
+        assertEquals(1, value?.size)
+        assertEquals("Broccoli, raw", value?.firstOrNull()?.name)
+        assertEquals(NutritionSource.USDA_FOOD_DATA_CENTRAL, value?.firstOrNull()?.source)
     }
 }

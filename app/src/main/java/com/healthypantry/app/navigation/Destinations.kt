@@ -10,7 +10,9 @@ object Destinations {
     /** Nested graph route for the Pantry tab (list -> add/edit item form). */
     const val PANTRY_GRAPH = "pantry_graph"
     const val PANTRY_LIST = "pantry_list"
-    const val ITEM_FORM = "item_form"
+    const val ITEM_FORM = "item_form?itemId={itemId}"
+
+    fun itemForm(itemId: Long? = null) = if (itemId != null) "item_form?itemId=$itemId" else "item_form"
 
     /** `RecipeScreen`/`WeekPlanScreen` already own an internal list/form toggle (see their own
      * KDoc), so each is a single top-level destination here, not its own nested graph. */

@@ -94,6 +94,7 @@ fun ItemFormScreen(
         onUsdaQueryChanged = itemFormViewModel::onUsdaQueryChanged,
         onScanBarcodeClick = { barcodeScannerLauncher.launch(itemFormViewModel::onBarcodeScanned) },
         onSearchUsdaClick = itemFormViewModel::onUsdaSearch,
+        onResultSelected = itemFormViewModel::onResultSelected,
         onSaveClick = {
             val item = itemFormViewModel.buildFoodItem(existingId = existingItem?.id ?: 0L)
             if (existingItem != null) pantryViewModel.updateItem(item) else pantryViewModel.addItem(item)
@@ -123,6 +124,7 @@ fun ItemFormContent(
     onUsdaQueryChanged: (String) -> Unit,
     onScanBarcodeClick: () -> Unit,
     onSearchUsdaClick: (String) -> Unit,
+    onResultSelected: (com.healthypantry.feature.nutrition.domain.model.NutritionResult) -> Unit,
     onSaveClick: () -> Unit,
     onCancelClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -167,6 +169,22 @@ fun ItemFormContent(
                 CircularProgressIndicator(
                     modifier = Modifier.semantics { contentDescription = "Looking up nutrition data" },
                 )
+            }
+
+            if (uiState.searchResults.isNotEmpty()) {
+                Text(
+                    text = "Select a result:",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                uiState.searchResults.forEach { result ->
+                    TextButton(
+                        onClick = { onResultSelected(result) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = result.name, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
             }
 
             uiState.lookupError?.let { error ->
