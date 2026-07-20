@@ -1,5 +1,6 @@
 package com.healthypantry.feature.pantry.ui.vm
 
+import com.healthypantry.core.unit.ConversionFactor
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.nutrition.domain.model.NutritionResult
 import com.healthypantry.feature.pantry.domain.model.FoodItem
@@ -9,6 +10,18 @@ import com.healthypantry.feature.pantry.domain.model.FoodItemSource
 enum class ItemFormField {
     NAME, UNIT, CALORIES, PROTEIN, CARBS, FAT
 }
+
+/**
+ * One editable row inside [ItemFormUiState.conversions] — a registered [ConversionFactor] for
+ * this item, still being edited (same "raw string field" convention as
+ * `RecipeIngredientFormRow.quantity`: [factor] binds directly to an `OutlinedTextField` while the
+ * user is mid-edit and is only parsed at save time, by [ItemFormUiState.toConversionFactors]).
+ */
+data class ConversionRowState(
+    val fromUnit: MeasurementUnit = MeasurementUnit.GRAM,
+    val toUnit: MeasurementUnit = MeasurementUnit.GRAM,
+    val factor: String = "",
+)
 
 private const val MACRO_LOOKUP_BASIS_GRAMS = 100.0
 
@@ -36,6 +49,7 @@ data class ItemFormUiState(
     val isLookingUp: Boolean = false,
     val lookupError: String? = null,
     val searchResults: List<NutritionResult> = emptyList(),
+    val conversions: List<ConversionRowState> = emptyList(),
 )
 
 /**
@@ -87,3 +101,18 @@ fun ItemFormUiState.toFoodItem(id: Long = 0L): FoodItem = FoodItem(
     barcode = barcode,
     externalSourceId = externalSourceId,
 )
+
+/**
+ * Builds the [ConversionFactor]s to persist from this form state's [ItemFormUiState.conversions].
+ * A row with a blank or unparseable [ConversionRowState.factor] is dropped rather than blocking
+ * the whole save — same "best-effort parse, save what's valid" approach as [toFoodItem] and
+ * `RecipeViewModel.saveRecipe`'s ingredient rows.
+ *
+ * This ViewModel never touches [com.healthypantry.feature.pantry.data.repo.UnitConversionRepository]
+ * directly (same convention as [toFoodItem]/`FoodItemRepository`, see [ItemFormViewModel] KDoc) —
+ * the caller (a later PR's screen, via `PantryViewModel`) reads this built list to persist it.
+ */
+fun ItemFormUiState.toConversionFactors(): List<ConversionFactor> = conversions.mapNotNull { row ->
+    val factor = row.factor.toDoubleOrNull() ?: return@mapNotNull null
+    ConversionFactor(fromUnit = row.fromUnit, toUnit = row.toUnit, factor = factor)
+}

@@ -3,12 +3,21 @@ package com.healthypantry.feature.pantry.ui.vm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.healthypantry.core.common.DispatcherProvider
+import com.healthypantry.core.unit.ConversionFactor
 import kotlinx.coroutines.CancellationException
 import com.healthypantry.feature.pantry.data.repo.FoodItemRepository
 import com.healthypantry.feature.pantry.data.repo.StockBatchRepository
+import com.healthypantry.feature.pantry.data.repo.UnitConversionRepository
 import com.healthypantry.feature.pantry.domain.model.FoodItem
 import com.healthypantry.feature.pantry.domain.model.StockBatch
 import com.healthypantry.feature.pantry.domain.usecase.ComputeProjectedStockUseCase
+import com.healthypantry.feature.planning.data.repo.PlanEntryRepository
+import com.healthypantry.feature.planning.domain.model.PlanEntry
+import com.healthypantry.feature.planning.domain.model.PlanEntryType
+import com.healthypantry.feature.planning.domain.usecase.ComputeWeeklyNeedsUseCase
+import com.healthypantry.feature.planning.ui.vm.currentWeekRange
+import com.healthypantry.feature.recipes.data.repo.RecipeRepository
+import com.healthypantry.feature.recipes.domain.model.RecipeWithIngredients
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -48,35 +58,18 @@ data class PantryUiState(
  * Joins [FoodItemRepository.observeAll] with each item's actual stock and projected stock into
  * a single [uiState] for `feature/pantry/ui/screen` Compose screens (PR6).
  *
- * TODO(PR9 follow-up, not closed in this PR): `committedQuantity` below is still hardcoded to
- * `0.0` — projected stock still equals actual stock. A real source now exists:
- * `com.healthypantry.feature.planning.ui.vm.PlanViewModel.uiState.weeklyNeeds` already computes
- * the `FoodItemId -> committed quantity` map for the current week via
- * [ComputeWeeklyNeedsUseCase][com.healthypantry.feature.planning.domain.usecase.ComputeWeeklyNeedsUseCase].
- * Wiring it in here was deliberately left out of PR9 rather than forced in: it would make this
- * ViewModel depend on `PlanEntryRepository`/`RecipeRepository`/`UnitConversionRepository` (a
- * pantry-feature ViewModel reaching into planning/recipes), plus reactively re-resolve every
- * referenced recipe's ingredients and every referenced item's conversion factors per pantry row
- * (the same one-shot-`.first()`-per-recipe resolution `PlanViewModel.resolveWeeklyNeeds` already
- * does) — a meaningful scope/complexity increase for a Phase 9 UI task, and a cross-feature
- * dependency this ViewModel doesn't otherwise have. Once nav/integration (Phase 11) exists and a
- * shared "current week needs" source is decided (e.g. hoisted above both ViewModels, or read
- * from a shared repository-level cache instead of two independent per-screen computations), this
- * should be revisited instead of adding a second independent computation of the same map here.
- *
- * Phase 11 (nav/integration) note: still not closed. The Pantry and Plan tabs are sibling
- * top-level bottom-nav destinations with independent (save/restore-state) back stacks, not nested
- * under one shared parent nav-graph entry — so there is no single [androidx.navigation.NavBackStackEntry]
- * to scope a shared ViewModel to the way `ItemFormScreen`+`PantryListScreen` share the Pantry
- * graph. The only real wiring point would be an Activity-scoped shared component (or a new
- * repository-level cache) reproducing `PlanViewModel.resolveWeeklyNeeds`'s reactive resolution,
- * which is exactly the cross-feature-dependency/duplication cost already flagged above — adding
- * navigation didn't create a smaller version of that problem, so it's left deferred rather than
- * forced in here.
- *
- * `PlanEntry` (meal-planning) does not exist yet (PR7/PR8), so this ViewModel always passes a
- * committed quantity of `0.0` into [ComputeProjectedStockUseCase.compute] — projected stock
- * equals actual stock until this TODO above is picked up.
+ * Projected stock subtracts this week's not-yet-eaten committed quantity (spec "Projected vs
+ * Actual Stock"): [resolveCommittedQuantities] mirrors
+ * `PlanViewModel.resolveWeeklyNeeds`'s one-shot recipe/conversion-factor resolution feeding
+ * [ComputeWeeklyNeedsUseCase] — the "FoodItemId -> committed quantity" map that use-case computes
+ * is exactly what [ComputeProjectedStockUseCase.compute] accepts as `committedQuantity`. This is
+ * a deliberate cross-feature dependency (this ViewModel now reaches into
+ * `PlanEntryRepository`/`RecipeRepository`/`UnitConversionRepository`, and reuses
+ * `com.healthypantry.feature.planning.ui.vm.currentWeekRange`, a UI-layer helper from the
+ * planning feature) rather than a shared repository-level cache — the KDoc this replaced flagged
+ * exactly this tradeoff as a possible follow-up; picking it up here still duplicates
+ * `PlanViewModel.resolveWeeklyNeeds`'s resolution rather than sharing it, which remains a real
+ * candidate for a later refactor once both screens are wired into navigation.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -84,12 +77,20 @@ class PantryViewModel @Inject constructor(
     private val foodItemRepository: FoodItemRepository,
     private val stockBatchRepository: StockBatchRepository,
     private val computeProjectedStockUseCase: ComputeProjectedStockUseCase,
+    private val planEntryRepository: PlanEntryRepository,
+    private val recipeRepository: RecipeRepository,
+    private val unitConversionRepository: UnitConversionRepository,
+    private val computeWeeklyNeedsUseCase: ComputeWeeklyNeedsUseCase,
     private val dispatcherProvider: DispatcherProvider,
 ) : ViewModel() {
 
+    private val weekRange = currentWeekRange()
+
     val uiState: StateFlow<PantryUiState> =
-        foodItemRepository.observeAll()
-            .flatMapLatest { items -> observeRowsFor(items) }
+        combine(foodItemRepository.observeAll(), observeCommittedQuantities()) { items, committedQuantities ->
+            items to committedQuantities
+        }
+            .flatMapLatest { (items, committedQuantities) -> observeRowsFor(items, committedQuantities) }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
@@ -106,24 +107,71 @@ class PantryViewModel @Inject constructor(
      */
     val errorEvent: SharedFlow<String> = _errorEvent.asSharedFlow()
 
-    private fun observeRowsFor(items: List<FoodItem>): Flow<PantryUiState> {
+    private fun observeRowsFor(items: List<FoodItem>, committedQuantities: Map<Long, Double>): Flow<PantryUiState> {
         if (items.isEmpty()) {
             return flowOf(PantryUiState(items = emptyList(), isLoading = false))
         }
-        val rowFlows = items.map { item -> observeRow(item) }
+        val rowFlows = items.map { item -> observeRow(item, committedQuantities) }
         return combine(rowFlows) { rows -> PantryUiState(items = rows.toList(), isLoading = false) }
     }
 
-    private fun observeRow(item: FoodItem): Flow<PantryItemUi> =
+    private fun observeRow(item: FoodItem, committedQuantities: Map<Long, Double>): Flow<PantryItemUi> =
         stockBatchRepository.observeTotalOnHand(item.id).map { actualStock ->
             PantryItemUi(
                 foodItem = item,
                 actualStock = actualStock,
-                projectedStock = computeProjectedStockUseCase.compute(actualStock, committedQuantity = 0.0),
+                projectedStock = computeProjectedStockUseCase.compute(
+                    actualStock,
+                    committedQuantity = committedQuantities[item.id] ?: 0.0,
+                ),
             )
         }
 
-    fun addItem(item: FoodItem) = launchOnIo { foodItemRepository.upsert(item) }
+    /**
+     * This week's `FoodItemId -> committed quantity` map, re-resolved every time the week's plan
+     * entries change (spec "Projected vs Actual Stock").
+     */
+    private fun observeCommittedQuantities(): Flow<Map<Long, Double>> =
+        planEntryRepository.observeWeek(weekRange.startEpochDay, weekRange.endEpochDay)
+            .map { entries -> resolveCommittedQuantities(entries) }
+
+    /**
+     * One-shot resolution of every RECIPE-referenced [RecipeWithIngredients] and every referenced
+     * FoodItem's [ConversionFactor]s for [entries], then feeds them into
+     * [ComputeWeeklyNeedsUseCase.compute] — identical resolution to
+     * `PlanViewModel.resolveWeeklyNeeds`.
+     *
+     * A [com.healthypantry.core.common.Result.Failure] (e.g. an unresolvable unit conversion)
+     * falls back to an empty map (every item's committed quantity defaults to zero, so its
+     * projected stock falls back to actual stock) rather than surfacing an error here: a
+     * planning-side data problem shouldn't block the whole pantry list from rendering, and
+     * `PlanViewModel`'s own `weeklyNeedsError` is still the place that surfaces it to the user.
+     */
+    private suspend fun resolveCommittedQuantities(entries: List<PlanEntry>): Map<Long, Double> {
+        val recipeIds = entries.filter { it.type == PlanEntryType.RECIPE }.mapNotNull { it.recipeId }.toSet()
+        val recipesWithIngredientsById: Map<Long, RecipeWithIngredients> = recipeIds
+            .mapNotNull { id -> recipeRepository.observeRecipeWithIngredients(id).first()?.let { id to it } }
+            .toMap()
+
+        val foodItemIds = recipesWithIngredientsById.values
+            .flatMap { withIngredients -> withIngredients.ingredients.map { it.foodItem.id } }
+            .toSet() + entries.filter { it.type == PlanEntryType.ITEM }.mapNotNull { it.foodItemId }.toSet()
+        val factorsByFoodItemId: Map<Long, List<ConversionFactor>> =
+            foodItemIds.associateWith { id -> unitConversionRepository.observeForFoodItem(id).first() }
+
+        return computeWeeklyNeedsUseCase.compute(entries, recipesWithIngredientsById, factorsByFoodItemId)
+            .getOrNull()
+            .orEmpty()
+    }
+
+    /**
+     * Inserts a new item or updates an existing one, returning its id. A plain suspend function
+     * (not fire-and-forget like [updateItem]/[deleteItem]) so the caller can await the new id for
+     * an id-dependent follow-up (e.g. attaching a starting [StockBatch]) — the caller (a later
+     * PR's screen) is expected to launch this itself via `viewModelScope.launch` and handle a
+     * thrown exception, rather than this ViewModel catching it internally.
+     */
+    suspend fun addItem(item: FoodItem): Long = foodItemRepository.upsert(item)
 
     fun updateItem(item: FoodItem) = launchOnIo { foodItemRepository.upsert(item) }
 

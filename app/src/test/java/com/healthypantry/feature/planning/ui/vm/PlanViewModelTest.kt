@@ -121,7 +121,7 @@ class PlanViewModelTest {
         val stockBatchRepository = StockBatchRepositoryImpl(database.stockBatchDao(), testDispatcherProvider)
         val recipeRepository = RecipeRepositoryImpl(database, database.recipeDao(), database.recipeIngredientDao(), testDispatcherProvider)
         val foodItemRepository = FoodItemRepositoryImpl(database.foodItemDao(), testDispatcherProvider)
-        val unitConversionRepository = UnitConversionRepositoryImpl(database.unitConversionDao())
+        val unitConversionRepository = UnitConversionRepositoryImpl(database.unitConversionDao(), testDispatcherProvider)
         val planEntryRepository = PlanEntryRepositoryImpl(database.planEntryDao(), testDispatcherProvider)
         val unitConverter = UnitConverter()
 

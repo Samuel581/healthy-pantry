@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +41,7 @@ import com.healthypantry.feature.pantry.domain.model.FoodItem
 import com.healthypantry.feature.pantry.ui.vm.ItemFormUiState
 import com.healthypantry.feature.pantry.ui.vm.ItemFormViewModel
 import com.healthypantry.feature.pantry.ui.vm.PantryViewModel
+import kotlinx.coroutines.launch
 
 /**
  * Spec: "Barcode Scan via Open Food Facts", "Manual Entry with USDA FDC Fallback" (nutrition-
@@ -52,9 +54,11 @@ import com.healthypantry.feature.pantry.ui.vm.PantryViewModel
  * navigation entry point wired to it yet (the nav graph is a later phase), but the ViewModel and
  * Save-button branching already support both add and edit for when one is added.
  *
- * [PantryViewModel.addItem]/[PantryViewModel.updateItem] are fire-and-forget, so [onSaved] fires
- * immediately on tap rather than waiting for persistence to confirm; a later failure still
- * surfaces via [PantryViewModel.errorEvent] as a Snackbar, same as [PantryListScreen].
+ * [PantryViewModel.updateItem] is fire-and-forget; [PantryViewModel.addItem] is a plain suspend
+ * function (so a later caller can await the new id), launched here via [rememberCoroutineScope]
+ * instead. Either way [onSaved] fires immediately on tap rather than waiting for persistence to
+ * confirm; a later failure still surfaces via [PantryViewModel.errorEvent] as a Snackbar, same as
+ * [PantryListScreen].
  */
 @Composable
 fun ItemFormScreen(
@@ -71,11 +75,13 @@ fun ItemFormScreen(
     }
     val uiState by itemFormViewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
-    // PantryViewModel.addItem/updateItem are fire-and-forget (see PantryViewModel.launchOnIo) - a
-    // save failure (e.g. a Room constraint violation) can only surface after onSaved() has already
-    // navigated away, so it's collected here rather than awaited, matching PantryListScreen's own
-    // errorEvent-as-Snackbar convention.
+    // Neither PantryViewModel.updateItem (fire-and-forget) nor the addItem launch below wait for
+    // persistence to confirm before this screen navigates away - a save failure (e.g. a Room
+    // constraint violation) can only surface after onSaved() has already navigated away, so it's
+    // collected here rather than awaited, matching PantryListScreen's own errorEvent-as-Snackbar
+    // convention.
     LaunchedEffect(pantryViewModel) {
         pantryViewModel.errorEvent.collect { message ->
             snackbarHostState.showSnackbar(message)
@@ -97,7 +103,11 @@ fun ItemFormScreen(
         onResultSelected = itemFormViewModel::onResultSelected,
         onSaveClick = {
             val item = itemFormViewModel.buildFoodItem(existingId = existingItem?.id ?: 0L)
-            if (existingItem != null) pantryViewModel.updateItem(item) else pantryViewModel.addItem(item)
+            if (existingItem != null) {
+                pantryViewModel.updateItem(item)
+            } else {
+                coroutineScope.launch { pantryViewModel.addItem(item) }
+            }
             onSaved()
         },
         onCancelClick = onCancel,
