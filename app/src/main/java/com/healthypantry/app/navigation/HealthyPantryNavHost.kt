@@ -13,6 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.navArgument
+import com.healthypantry.feature.pantry.ui.screen.ItemDetailScreen
 import com.healthypantry.feature.pantry.ui.screen.ItemFormScreen
 import com.healthypantry.feature.pantry.ui.screen.PantryListScreen
 import com.healthypantry.feature.pantry.ui.vm.PantryViewModel
@@ -20,14 +21,17 @@ import com.healthypantry.feature.planning.ui.screen.WeekPlanScreen
 import com.healthypantry.feature.recipes.ui.screen.RecipeScreen
 
 /**
- * Top-level nav graph wiring together every existing screen (`PantryListScreen`/`ItemFormScreen`,
- * `RecipeScreen`, `WeekPlanScreen`) behind the three bottom-nav tabs (see
+ * Top-level nav graph wiring together every existing screen (`PantryListScreen`/`ItemDetailScreen`/
+ * `ItemFormScreen`, `RecipeScreen`, `WeekPlanScreen`) behind the three bottom-nav tabs (see
  * [BOTTOM_NAV_DESTINATIONS] / `HealthyPantryBottomBar`).
  *
- * Only the Pantry tab needs its own nested graph ([Destinations.PANTRY_GRAPH]: list -> add-item
- * form) since `ItemFormScreen` is a distinct destination reachable from the list's `+` FAB.
- * `RecipeScreen`/`WeekPlanScreen` already own an internal list/form toggle, so they stay single
- * top-level destinations here (no change to their own internal navigation).
+ * Only the Pantry tab needs its own nested graph ([Destinations.PANTRY_GRAPH]: list -> item detail
+ * -> edit form) since `ItemDetailScreen`/`ItemFormScreen` are distinct destinations reachable from
+ * the list. Tapping a pantry row now opens `ItemDetailScreen` (batches, macros, delete) rather than
+ * `ItemFormScreen` directly (PR3a) - `ItemFormScreen` is reached from there via its edit button, or
+ * directly from the list's `+` FAB for a brand-new item. `RecipeScreen`/`WeekPlanScreen` already
+ * own an internal list/form toggle, so they stay single top-level destinations here (no change to
+ * their own internal navigation).
  */
 @Composable
 fun HealthyPantryNavHost(
@@ -43,7 +47,19 @@ fun HealthyPantryNavHost(
             composable(Destinations.PANTRY_LIST) {
                 PantryListScreen(
                     onAddItem = { navController.navigate(Destinations.itemForm()) },
-                    onEditItem = { item -> navController.navigate(Destinations.itemForm(item.id)) }
+                    onEditItem = { item -> navController.navigate(Destinations.itemDetail(item.id)) }
+                )
+            }
+            composable(
+                route = Destinations.ITEM_DETAIL,
+                arguments = listOf(navArgument("itemId") { type = NavType.LongType }),
+            ) { backStackEntry ->
+                val itemId = checkNotNull(backStackEntry.arguments?.getLong("itemId"))
+                ItemDetailScreen(
+                    itemId = itemId,
+                    onBack = { navController.popBackStack() },
+                    onEditItem = { navController.navigate(Destinations.itemForm(itemId)) },
+                    onItemDeleted = { navController.popBackStack() },
                 )
             }
             composable(
