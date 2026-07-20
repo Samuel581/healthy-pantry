@@ -95,11 +95,12 @@ class PantryViewModelTest {
 
     private class FakeStockBatchRepository : StockBatchRepository {
         private val totals = mutableMapOf<Long, MutableStateFlow<Double>>()
+        private val batchLists = mutableMapOf<Long, MutableStateFlow<List<StockBatch>>>()
         private val batches = mutableListOf<StockBatch>()
         private var nextId = 1L
 
         override fun observeForFoodItem(foodItemId: Long): Flow<List<StockBatch>> =
-            throw NotImplementedError("not used by PantryViewModelTest")
+            batchLists.getOrPut(foodItemId) { MutableStateFlow(emptyList()) }
 
         override fun observeTotalOnHand(foodItemId: Long): Flow<Double> =
             totals.getOrPut(foodItemId) { MutableStateFlow(0.0) }
@@ -124,6 +125,8 @@ class PantryViewModelTest {
         private fun recomputeTotal(foodItemId: Long) {
             val total = batches.filter { it.foodItemId == foodItemId }.sumOf { it.quantity }
             totals.getOrPut(foodItemId) { MutableStateFlow(0.0) }.value = total
+            batchLists.getOrPut(foodItemId) { MutableStateFlow(emptyList()) }.value =
+                batches.filter { it.foodItemId == foodItemId }
         }
     }
 
@@ -348,6 +351,29 @@ class PantryViewModelTest {
         val row = viewModel.uiState.value.items.first()
         assertEquals(250.0, row.actualStock, 0.0001)
         assertEquals(250.0, row.projectedStock, 0.0001)
+    }
+
+    @Test
+    fun `observeBatchesForItem reflects batches added and removed for that item only`() = runTest {
+        val foodItemRepository = FakeFoodItemRepository()
+        val stockBatchRepository = FakeStockBatchRepository()
+        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
+
+        val riceId = foodItemRepository.upsert(chickenBreast().copy(name = "Rice"))
+        val chickenId = foodItemRepository.upsert(chickenBreast())
+
+        val riceBatch = StockBatch(foodItemId = riceId, quantity = 500.0, addedAt = Instant.EPOCH)
+        val batchId = stockBatchRepository.upsert(riceBatch)
+        stockBatchRepository.upsert(StockBatch(foodItemId = chickenId, quantity = 300.0, addedAt = Instant.EPOCH))
+
+        val batchesForRice = viewModel.observeBatchesForItem(riceId).first()
+        assertEquals(1, batchesForRice.size)
+        assertEquals(500.0, batchesForRice.first().quantity, 0.0001)
+
+        viewModel.deleteStockBatch(riceBatch.copy(id = batchId))
+        advanceUntilIdle()
+
+        assertEquals(emptyList<StockBatch>(), viewModel.observeBatchesForItem(riceId).first())
     }
 
     @Test

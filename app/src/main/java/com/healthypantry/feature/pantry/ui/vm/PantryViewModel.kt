@@ -100,7 +100,7 @@ class PantryViewModel @Inject constructor(
     private val _errorEvent = MutableSharedFlow<String>()
 
     /**
-     * One-off failures from [addItem]/[updateItem]/[deleteItem]/[addStockBatch] (e.g. a Room
+     * One-off failures from [addItem]/[updateItem]/[deleteItem]/[addStockBatch]/[deleteStockBatch] (e.g. a Room
      * constraint violation from an unrelated concurrent delete). A [SharedFlow], not part of
      * [uiState], since these are transient events (surface a snackbar) rather than persistent
      * UI state.
@@ -180,6 +180,12 @@ class PantryViewModel @Inject constructor(
     fun getItem(id: Long): Flow<FoodItem?> = foodItemRepository.observeById(id)
 
     fun addStockBatch(batch: StockBatch) = launchOnIo { stockBatchRepository.upsert(batch) }
+
+    /** Per-item batch list for an item-detail screen (spec "Item and Stock Batch CRUD"). */
+    fun observeBatchesForItem(foodItemId: Long): Flow<List<StockBatch>> =
+        stockBatchRepository.observeForFoodItem(foodItemId)
+
+    fun deleteStockBatch(batch: StockBatch) = launchOnIo { stockBatchRepository.delete(batch) }
 
     private fun launchOnIo(block: suspend () -> Unit) {
         viewModelScope.launch(dispatcherProvider.io) {
