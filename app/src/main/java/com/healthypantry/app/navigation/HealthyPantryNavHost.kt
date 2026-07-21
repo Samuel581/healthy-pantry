@@ -17,6 +17,8 @@ import com.healthypantry.feature.pantry.ui.screen.ItemDetailScreen
 import com.healthypantry.feature.pantry.ui.screen.ItemFormScreen
 import com.healthypantry.feature.pantry.ui.screen.PantryListScreen
 import com.healthypantry.feature.pantry.ui.vm.PantryViewModel
+import com.healthypantry.feature.planning.domain.model.MealSlot
+import com.healthypantry.feature.planning.ui.screen.PlanAssignScreen
 import com.healthypantry.feature.planning.ui.screen.WeekPlanScreen
 import com.healthypantry.feature.recipes.ui.screen.RecipeScreen
 
@@ -31,7 +33,9 @@ import com.healthypantry.feature.recipes.ui.screen.RecipeScreen
  * `ItemFormScreen` directly (PR3a) - `ItemFormScreen` is reached from there via its edit button, or
  * directly from the list's `+` FAB for a brand-new item. `RecipeScreen`/`WeekPlanScreen` already
  * own an internal list/form toggle, so they stay single top-level destinations here (no change to
- * their own internal navigation).
+ * their own internal navigation). `WeekPlanScreen`'s "+ Add {meal}" buttons are the one exception:
+ * they navigate to [Destinations.PLAN_ASSIGN] (`PlanAssignScreen`), a real separate destination,
+ * not an internal toggle — wired starting in the Organic planning-UI redesign PR.
  */
 @Composable
 fun HealthyPantryNavHost(
@@ -89,6 +93,26 @@ fun HealthyPantryNavHost(
             }
         }
         composable(Destinations.RECIPES) { RecipeScreen() }
-        composable(Destinations.PLAN) { WeekPlanScreen() }
+        composable(Destinations.PLAN) {
+            WeekPlanScreen(
+                onAddToSlot = { day, mealSlot -> navController.navigate(Destinations.planAssign(day, mealSlot.name)) },
+            )
+        }
+        composable(
+            route = Destinations.PLAN_ASSIGN,
+            arguments = listOf(
+                navArgument("day") { type = NavType.LongType },
+                navArgument("meal") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val day = checkNotNull(backStackEntry.arguments?.getLong("day"))
+            val mealSlot = MealSlot.valueOf(checkNotNull(backStackEntry.arguments?.getString("meal")))
+            PlanAssignScreen(
+                day = day,
+                mealSlot = mealSlot,
+                onBack = { navController.popBackStack() },
+                onAssigned = { navController.popBackStack() },
+            )
+        }
     }
 }
