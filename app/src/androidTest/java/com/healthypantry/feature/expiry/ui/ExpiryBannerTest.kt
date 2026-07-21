@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.healthypantry.app.theme.HealthyPantryTheme
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.expiry.domain.model.ExpiringBatch
@@ -52,16 +53,15 @@ class ExpiryBannerTest {
     )
 
     @Test
-    fun bannerListsEachExpiringItemName() {
+    fun bannerListsEachExpiringItemNameCommaJoined() {
         composeTestRule.setContent {
             HealthyPantryTheme {
                 ExpiryBanner(expiringItems = listOf(expiringBatch(name = "Yogurt"), expiringBatch(name = "Milk")))
             }
         }
 
-        composeTestRule.onNodeWithText("Expiring soon (2)").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Yogurt").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Milk").assertIsDisplayed()
+        composeTestRule.onNodeWithText("2 items expiring soon").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Yogurt, Milk").assertIsDisplayed()
     }
 
     @Test
@@ -72,6 +72,7 @@ class ExpiryBannerTest {
             }
         }
 
+        composeTestRule.onNodeWithText("1 item expiring soon").assertIsDisplayed()
         composeTestRule.onNodeWithText("Milk (expired)").assertIsDisplayed()
     }
 
@@ -82,6 +83,19 @@ class ExpiryBannerTest {
                 ExpiryBanner(expiringItems = emptyList())
             }
         }
+
+        composeTestRule.onNodeWithContentDescription("Expiring soon banner").assertDoesNotExist()
+    }
+
+    @Test
+    fun dismissButtonHidesTheBanner() {
+        composeTestRule.setContent {
+            HealthyPantryTheme {
+                ExpiryBanner(expiringItems = listOf(expiringBatch(name = "Yogurt")))
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Dismiss expiring items banner").performClick()
 
         composeTestRule.onNodeWithContentDescription("Expiring soon banner").assertDoesNotExist()
     }

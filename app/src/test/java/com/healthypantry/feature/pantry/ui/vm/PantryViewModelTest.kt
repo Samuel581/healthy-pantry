@@ -173,11 +173,15 @@ class PantryViewModelTest {
             throw NotImplementedError("not used by PantryViewModelTest")
     }
 
-    /** No conversion-dependent scenario in this test file needs real data; every write is unused. */
+    /** Records every `upsert` call so the `addConversionFactor` test can assert on it; `delete`
+     * stays unused by this test file. */
     private class FakeUnitConversionRepository : UnitConversionRepository {
+        val persisted = mutableListOf<Pair<Long, ConversionFactor>>()
         override fun observeForFoodItem(foodItemId: Long): Flow<List<ConversionFactor>> = MutableStateFlow(emptyList())
-        override suspend fun upsert(foodItemId: Long, factor: ConversionFactor): Long =
-            throw NotImplementedError("not used by PantryViewModelTest")
+        override suspend fun upsert(foodItemId: Long, factor: ConversionFactor): Long {
+            persisted += foodItemId to factor
+            return persisted.size.toLong()
+        }
         override suspend fun delete(foodItemId: Long, factor: ConversionFactor): Unit =
             throw NotImplementedError("not used by PantryViewModelTest")
     }
@@ -406,6 +410,46 @@ class PantryViewModelTest {
         advanceUntilIdle()
 
         assertEquals("simulated repository failure", errorDeferred.await())
+    }
+
+    @Test
+    fun `uiState row exposes batchCount matching the number of stock batches for that item`() = runTest {
+        val foodItemRepository = FakeFoodItemRepository()
+        val stockBatchRepository = FakeStockBatchRepository()
+        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
+        viewModel.startCollecting()
+
+        val id = foodItemRepository.upsert(chickenBreast())
+        advanceUntilIdle()
+        assertEquals(0, viewModel.uiState.value.items.first().batchCount)
+
+        stockBatchRepository.upsert(StockBatch(foodItemId = id, quantity = 200.0, addedAt = Instant.EPOCH))
+        stockBatchRepository.upsert(StockBatch(foodItemId = id, quantity = 300.0, addedAt = Instant.EPOCH))
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.uiState.value.items.first().batchCount)
+    }
+
+    @Test
+    fun `addConversionFactor persists it via the unit conversion repository`() = runTest {
+        val foodItemRepository = FakeFoodItemRepository()
+        val stockBatchRepository = FakeStockBatchRepository()
+        val unitConversionRepository = FakeUnitConversionRepository()
+        val viewModel = buildViewModel(
+            foodItemRepository,
+            stockBatchRepository,
+            unitConversionRepository = unitConversionRepository,
+        )
+        viewModel.startCollecting()
+
+        val id = foodItemRepository.upsert(chickenBreast())
+        advanceUntilIdle()
+
+        val factor = ConversionFactor(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = 185.0)
+        viewModel.addConversionFactor(id, factor)
+        advanceUntilIdle()
+
+        assertEquals(listOf(id to factor), unitConversionRepository.persisted)
     }
 
     @Test

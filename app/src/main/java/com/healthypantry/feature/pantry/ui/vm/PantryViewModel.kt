@@ -37,13 +37,16 @@ import javax.inject.Inject
 
 /**
  * A single pantry row: a [FoodItem] joined with its actual stock
- * ([StockBatchRepository.observeTotalOnHand]) and projected stock
- * ([ComputeProjectedStockUseCase]).
+ * ([StockBatchRepository.observeTotalOnHand]), projected stock
+ * ([ComputeProjectedStockUseCase]), and how many distinct batches make up that stock
+ * ([StockBatchRepository.observeForFoodItem] size — the redesigned list card's "N batches"
+ * summary line).
  */
 data class PantryItemUi(
     val foodItem: FoodItem,
     val actualStock: Double,
     val projectedStock: Double,
+    val batchCount: Int = 0,
 )
 
 data class PantryUiState(
@@ -116,7 +119,10 @@ class PantryViewModel @Inject constructor(
     }
 
     private fun observeRow(item: FoodItem, committedQuantities: Map<Long, Double>): Flow<PantryItemUi> =
-        stockBatchRepository.observeTotalOnHand(item.id).map { actualStock ->
+        combine(
+            stockBatchRepository.observeTotalOnHand(item.id),
+            stockBatchRepository.observeForFoodItem(item.id),
+        ) { actualStock, batches ->
             PantryItemUi(
                 foodItem = item,
                 actualStock = actualStock,
@@ -124,6 +130,7 @@ class PantryViewModel @Inject constructor(
                     actualStock,
                     committedQuantity = committedQuantities[item.id] ?: 0.0,
                 ),
+                batchCount = batches.size,
             )
         }
 
@@ -180,6 +187,16 @@ class PantryViewModel @Inject constructor(
     fun getItem(id: Long): Flow<FoodItem?> = foodItemRepository.observeById(id)
 
     fun addStockBatch(batch: StockBatch) = launchOnIo { stockBatchRepository.upsert(batch) }
+
+    /**
+     * Persists a single [ConversionFactor] registered for [foodItemId] (spec "Unit Conversion
+     * Correctness") — the item create/edit form (`ItemFormScreen`) calls this once per row built
+     * from [com.healthypantry.feature.pantry.ui.vm.ItemFormViewModel.buildConversionFactors] on
+     * save, the "later PR's screen" [UnitConversionRepository]'s own KDoc anticipated. Fire-and-
+     * forget, same convention as [addStockBatch].
+     */
+    fun addConversionFactor(foodItemId: Long, factor: ConversionFactor) =
+        launchOnIo { unitConversionRepository.upsert(foodItemId, factor) }
 
     /** Per-item batch list for an item-detail screen (spec "Item and Stock Batch CRUD"). */
     fun observeBatchesForItem(foodItemId: Long): Flow<List<StockBatch>> =
