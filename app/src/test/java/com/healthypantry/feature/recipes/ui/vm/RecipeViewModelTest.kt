@@ -3,9 +3,11 @@ package com.healthypantry.feature.recipes.ui.vm
 import com.healthypantry.core.common.DispatcherProvider
 import com.healthypantry.core.common.MainDispatcherRule
 import com.healthypantry.core.unit.MeasurementUnit
+import com.healthypantry.core.unit.UnitConverter
 import com.healthypantry.feature.pantry.data.repo.FoodItemRepository
 import com.healthypantry.feature.pantry.domain.model.FoodItem
 import com.healthypantry.feature.pantry.domain.model.FoodItemSource
+import com.healthypantry.feature.planning.domain.usecase.ComputeMacroTotalsUseCase
 import com.healthypantry.feature.recipes.data.repo.RecipeRepository
 import com.healthypantry.feature.recipes.domain.model.Recipe
 import com.healthypantry.feature.recipes.domain.model.RecipeIngredient
@@ -129,9 +131,11 @@ class RecipeViewModelTest {
     private fun buildViewModel(
         recipeRepository: RecipeRepository = FakeRecipeRepository(),
         foodItemRepository: FoodItemRepository = FakeFoodItemRepository(),
+        computeMacroTotalsUseCase: ComputeMacroTotalsUseCase = ComputeMacroTotalsUseCase(UnitConverter()),
     ) = RecipeViewModel(
         recipeRepository = recipeRepository,
         foodItemRepository = foodItemRepository,
+        computeMacroTotalsUseCase = computeMacroTotalsUseCase,
         dispatcherProvider = testDispatcherProvider,
     )
 
@@ -171,6 +175,27 @@ class RecipeViewModelTest {
         assertEquals(1, state.recipes.size)
         assertEquals("Chicken stir-fry", state.recipes.first().name)
         assertEquals(2, state.recipes.first().servings)
+    }
+
+    @Test
+    fun `uiState exposes an ingredient count and macro totals for a saved recipe`() = runTest {
+        val foodItemRepository = FakeFoodItemRepository()
+        val recipeRepository = FakeRecipeRepository()
+        val foodItemId = foodItemRepository.upsert(chickenBreast())
+        recipeRepository.seedFoodItem(chickenBreast(id = foodItemId))
+        val recipeId = recipeRepository.upsertRecipeWithIngredients(
+            Recipe(name = "Chicken bowl", servings = 2, createdAt = Instant.EPOCH),
+            listOf(RecipeIngredient(recipeId = 0, foodItemId = foodItemId, quantity = 200.0, unit = MeasurementUnit.GRAM, sortOrder = 0)),
+        )
+        val viewModel = buildViewModel(recipeRepository, foodItemRepository)
+        viewModel.startCollecting()
+        advanceUntilIdle()
+
+        val summary = viewModel.uiState.value.macroSummariesByRecipeId.getValue(recipeId)
+        assertEquals(1, summary.ingredientCount)
+        assertEquals(330.0, summary.macroTotals.calories, 0.0001)
+        assertEquals(62.0, summary.macroTotals.proteinGrams, 0.0001)
+        assertTrue(summary.macroTotals.isComplete)
     }
 
     @Test
