@@ -18,6 +18,18 @@ object Destinations {
      * KDoc), so each is a single top-level destination here, not its own nested graph. */
     const val RECIPES = "recipes"
     const val PLAN = "plan"
+
+    /** Item detail (batches, macros, delete) — always needs a real item id, unlike [ITEM_FORM]
+     * which also serves "add" with no id. Wired starting in the pantry-UI redesign PR. */
+    const val ITEM_DETAIL = "item_detail/{itemId}"
+
+    fun itemDetail(itemId: Long) = "item_detail/$itemId"
+
+    /** Recipe-or-quick-add picker for a single day/meal slot. Wired starting in the planning-UI
+     * redesign PR. */
+    const val PLAN_ASSIGN = "plan_assign?day={day}&meal={meal}"
+
+    fun planAssign(day: Long, meal: String) = "plan_assign?day=$day&meal=$meal"
 }
 
 /** One entry in [BOTTOM_NAV_DESTINATIONS]. */

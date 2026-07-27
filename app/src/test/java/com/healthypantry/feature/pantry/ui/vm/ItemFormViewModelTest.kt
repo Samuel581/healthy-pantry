@@ -3,6 +3,7 @@ package com.healthypantry.feature.pantry.ui.vm
 import com.healthypantry.core.common.DispatcherProvider
 import com.healthypantry.core.common.MainDispatcherRule
 import com.healthypantry.core.common.Result
+import com.healthypantry.core.unit.ConversionFactor
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.nutrition.data.NutritionLookupRepository
 import com.healthypantry.feature.nutrition.domain.model.NutritionLookupError
@@ -248,5 +249,70 @@ class ItemFormViewModelTest {
         val resaved = viewModel.buildFoodItem(existingId = 11L)
         assertNull(resaved.fatGramsPerUnit)
         assertEquals(4.5, resaved.caloriesPerUnit!!, 0.0001)
+    }
+
+    @Test
+    fun `addConversionRow appends a blank conversion row`() = runTest {
+        val viewModel = buildViewModel(FakeNutritionLookupRepository(barcodeResult = Result.failure(NutritionLookupError.NotFound)))
+
+        viewModel.addConversionRow()
+
+        assertEquals(listOf(ConversionRowState()), viewModel.uiState.value.conversions)
+    }
+
+    @Test
+    fun `updateConversionRow replaces only the row at the given index`() = runTest {
+        val viewModel = buildViewModel(FakeNutritionLookupRepository(barcodeResult = Result.failure(NutritionLookupError.NotFound)))
+        viewModel.addConversionRow()
+        viewModel.addConversionRow()
+
+        viewModel.updateConversionRow(1, ConversionRowState(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = "185"))
+
+        val rows = viewModel.uiState.value.conversions
+        assertEquals(2, rows.size)
+        assertEquals(ConversionRowState(), rows[0])
+        assertEquals(ConversionRowState(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = "185"), rows[1])
+    }
+
+    @Test
+    fun `removeConversionRow drops a middle row and buildConversionFactors returns the remaining rows, parsed, in order`() = runTest {
+        val viewModel = buildViewModel(FakeNutritionLookupRepository(barcodeResult = Result.failure(NutritionLookupError.NotFound)))
+
+        // GIVEN three conversion rows: cup->gram, tablespoon->gram (to be removed), piece->gram
+        viewModel.addConversionRow()
+        viewModel.updateConversionRow(0, ConversionRowState(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = "185"))
+        viewModel.addConversionRow()
+        viewModel.updateConversionRow(1, ConversionRowState(fromUnit = MeasurementUnit.TABLESPOON, toUnit = MeasurementUnit.GRAM, factor = "12.5"))
+        viewModel.addConversionRow()
+        viewModel.updateConversionRow(2, ConversionRowState(fromUnit = MeasurementUnit.PIECE, toUnit = MeasurementUnit.GRAM, factor = "50"))
+
+        // WHEN the middle row is removed
+        viewModel.removeConversionRow(1)
+
+        // THEN only cup->gram and piece->gram remain, in their original relative order
+        assertEquals(2, viewModel.uiState.value.conversions.size)
+        val factors = viewModel.buildConversionFactors()
+        assertEquals(
+            listOf(
+                ConversionFactor(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = 185.0),
+                ConversionFactor(fromUnit = MeasurementUnit.PIECE, toUnit = MeasurementUnit.GRAM, factor = 50.0),
+            ),
+            factors,
+        )
+    }
+
+    @Test
+    fun `buildConversionFactors drops rows with a blank or unparseable factor instead of blocking save`() = runTest {
+        val viewModel = buildViewModel(FakeNutritionLookupRepository(barcodeResult = Result.failure(NutritionLookupError.NotFound)))
+        viewModel.addConversionRow()
+        viewModel.updateConversionRow(0, ConversionRowState(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = "185"))
+        viewModel.addConversionRow()
+        viewModel.updateConversionRow(1, ConversionRowState(fromUnit = MeasurementUnit.TABLESPOON, toUnit = MeasurementUnit.GRAM, factor = ""))
+        viewModel.addConversionRow()
+        viewModel.updateConversionRow(2, ConversionRowState(fromUnit = MeasurementUnit.PIECE, toUnit = MeasurementUnit.GRAM, factor = "not-a-number"))
+
+        val factors = viewModel.buildConversionFactors()
+
+        assertEquals(listOf(ConversionFactor(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = 185.0)), factors)
     }
 }

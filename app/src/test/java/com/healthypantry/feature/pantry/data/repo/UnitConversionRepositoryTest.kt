@@ -2,6 +2,7 @@ package com.healthypantry.feature.pantry.data.repo
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.healthypantry.core.common.DispatcherProvider
 import com.healthypantry.core.database.AppDatabase
 import com.healthypantry.core.unit.ConversionFactor
 import com.healthypantry.core.unit.MeasurementUnit
@@ -10,6 +11,7 @@ import com.healthypantry.feature.pantry.data.entity.UnitConversionEntity
 import com.healthypantry.feature.pantry.domain.model.FoodItemSource
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -23,7 +25,8 @@ import org.robolectric.annotation.Config
  * Spec: "Unit Conversion Correctness" (sdd/pantry-tracker/spec) — repository-level guarantee that
  * [UnitConversionRepositoryImpl] maps [UnitConversionEntity] rows to domain-facing
  * [ConversionFactor]s without leaking Room types, for use by the planning-domain macro-rollup/
- * weekly-needs/mark-eaten use-cases.
+ * weekly-needs/mark-eaten use-cases, and that its write path ([UnitConversionRepositoryImpl.upsert]/
+ * [UnitConversionRepositoryImpl.delete]) persists/removes rows correctly for the item form (PR2).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -34,13 +37,20 @@ class UnitConversionRepositoryTest {
     private lateinit var repository: UnitConversionRepository
     private var riceId: Long = 0
 
+    private val testDispatcherProvider = object : DispatcherProvider {
+        private val dispatcher = UnconfinedTestDispatcher()
+        override val main get() = dispatcher
+        override val io get() = dispatcher
+        override val default get() = dispatcher
+    }
+
     @Before
     fun setUp() = runTest {
         database = Room.inMemoryDatabaseBuilder(
             ApplicationProvider.getApplicationContext(),
             AppDatabase::class.java,
         ).allowMainThreadQueries().build()
-        repository = UnitConversionRepositoryImpl(database.unitConversionDao())
+        repository = UnitConversionRepositoryImpl(database.unitConversionDao(), testDispatcherProvider)
 
         riceId = database.foodItemDao().insert(
             FoodItemEntity(
@@ -78,5 +88,38 @@ class UnitConversionRepositoryTest {
         val factors = repository.observeForFoodItem(riceId).first()
 
         assertEquals(emptyList<ConversionFactor>(), factors)
+    }
+
+    @Test
+    fun `upsert persists a new ConversionFactor so it appears via observeForFoodItem`() = runTest {
+        val factor = ConversionFactor(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = 185.0)
+
+        val id = repository.upsert(riceId, factor)
+
+        assertEquals(listOf(factor), repository.observeForFoodItem(riceId).first())
+        // A real row id was returned (not a no-op placeholder), same contract as
+        // StockBatchRepository.upsert/FoodItemRepository.upsert.
+        assertEquals(true, id > 0)
+    }
+
+    @Test
+    fun `delete removes a matching persisted ConversionFactor`() = runTest {
+        val kept = ConversionFactor(fromUnit = MeasurementUnit.TABLESPOON, toUnit = MeasurementUnit.GRAM, factor = 12.5)
+        val toDelete = ConversionFactor(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = 185.0)
+        repository.upsert(riceId, kept)
+        repository.upsert(riceId, toDelete)
+
+        repository.delete(riceId, toDelete)
+
+        assertEquals(listOf(kept), repository.observeForFoodItem(riceId).first())
+    }
+
+    @Test
+    fun `delete for a factor that was never persisted is a silent no-op`() = runTest {
+        val neverPersisted = ConversionFactor(fromUnit = MeasurementUnit.LITER, toUnit = MeasurementUnit.MILLILITER, factor = 1000.0)
+
+        repository.delete(riceId, neverPersisted)
+
+        assertEquals(emptyList<ConversionFactor>(), repository.observeForFoodItem(riceId).first())
     }
 }

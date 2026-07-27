@@ -1,10 +1,16 @@
 package com.healthypantry.app.navigation
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -17,10 +23,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
  * `restoreState = true` — switching tabs preserves each tab's own back stack/scroll position
  * instead of recreating it from scratch on every tap.
  *
- * Uses a plain [Text] label as each tab's "icon" slot (first two letters of the tab name, not
- * just one — "Pantry" and "Plan" both start with 'P' and would otherwise collide) rather than
- * pulling in a Material icon library, matching this project's existing convention of textual
- * affordances over icon assets (e.g. `PantryListContent`'s `+` FAB, `RecipeScreen`'s buttons).
+ * Each tab's icon slot uses a real Material icon ([bottomNavIcon]); the selected-state pill
+ * background comes from M3's own [NavigationBarItem] indicator, themed automatically via the
+ * Organic [androidx.compose.material3.ColorScheme] (see `HealthyPantryTheme`).
  */
 @Composable
 fun HealthyPantryBottomBar(navController: NavHostController) {
@@ -39,9 +44,17 @@ fun HealthyPantryBottomBar(navController: NavHostController) {
                         restoreState = true
                     }
                 },
-                icon = { Text(item.label.take(2)) },
+                icon = { Icon(imageVector = bottomNavIcon(item.route), contentDescription = null) },
                 label = { Text(item.label) },
             )
         }
     }
+}
+
+/** Maps a [BottomNavDestination.route] to its tab icon. */
+private fun bottomNavIcon(route: String): ImageVector = when (route) {
+    Destinations.PANTRY_GRAPH -> Icons.Rounded.Inventory2
+    Destinations.RECIPES -> Icons.Rounded.MenuBook
+    Destinations.PLAN -> Icons.Rounded.CalendarMonth
+    else -> Icons.Rounded.Inventory2
 }

@@ -70,7 +70,7 @@ class MarkPlanEntryEatenUseCaseTest {
 
         val stockBatchRepository = StockBatchRepositoryImpl(database.stockBatchDao(), testDispatcherProvider)
         val recipeRepository = RecipeRepositoryImpl(database, database.recipeDao(), database.recipeIngredientDao(), testDispatcherProvider)
-        val unitConversionRepository = UnitConversionRepositoryImpl(database.unitConversionDao())
+        val unitConversionRepository = UnitConversionRepositoryImpl(database.unitConversionDao(), testDispatcherProvider)
         val planEntryRepository = PlanEntryRepositoryImpl(database.planEntryDao(), testDispatcherProvider)
 
         useCase = MarkPlanEntryEatenUseCase(

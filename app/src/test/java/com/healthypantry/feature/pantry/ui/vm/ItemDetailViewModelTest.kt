@@ -1,5 +1,6 @@
 package com.healthypantry.feature.pantry.ui.vm
 
+import androidx.lifecycle.SavedStateHandle
 import com.healthypantry.core.common.DispatcherProvider
 import com.healthypantry.core.common.MainDispatcherRule
 import com.healthypantry.core.unit.ConversionFactor
@@ -21,8 +22,10 @@ import com.healthypantry.feature.recipes.data.repo.RecipeRepository
 import com.healthypantry.feature.recipes.domain.model.Recipe
 import com.healthypantry.feature.recipes.domain.model.RecipeIngredient
 import com.healthypantry.feature.recipes.domain.model.RecipeWithIngredients
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
@@ -38,23 +41,29 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
 /**
- * Spec: Item and Stock Batch CRUD, Projected vs Actual Stock
- * (openspec/changes/pantry-tracker/specs/pantry-stock/spec.md)
+ * Spec: Item and Stock Batch CRUD, Unit Conversion Correctness, Projected vs Actual Stock
+ * (openspec/changes/pantry-tracker/specs/pantry-stock/spec.md,
+ * openspec/changes/pantry-tracker/specs/unit-conversion/spec.md).
  *
- * Hand-written fakes for [FoodItemRepository]/[StockBatchRepository]/[PlanEntryRepository]/
- * [RecipeRepository]/[UnitConversionRepository] (same convention as
- * [ComputeProjectedStockUseCaseTest][com.healthypantry.feature.pantry.domain.usecase.ComputeProjectedStockUseCaseTest]
- * and `FoodItemRepositoryTest`) — a real in-memory Room DB (the `PlanViewModelTest` convention)
- * isn't needed here since, unlike `MarkPlanEntryEatenUseCase`, projected-stock resolution never
- * needs a real DB transaction.
+ * Hand-written fakes mirroring [PantryViewModelTest]'s convention (same
+ * [FakeFoodItemRepository]/[FakeStockBatchRepository]/[FakePlanEntryRepository]/
+ * [FakeRecipeRepository] shape, kept consistent so both test files could plausibly share fakes
+ * later). [FakeUnitConversionRepository] additionally supports seeding real data here, since
+ * unlike `PantryViewModel`'s row list, [ItemDetailViewModel.uiState] surfaces `conversions`
+ * directly and that join needs to be provable.
+ *
+ * The projected-stock cases mirror [PantryViewModelTest]'s equivalent cases exactly, scoped down
+ * to a single item's `uiState` instead of a list row - see [ItemDetailViewModel]'s own KDoc for
+ * why the committed-quantity resolution is duplicated rather than shared.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class PantryViewModelTest {
+class ItemDetailViewModelTest {
 
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -65,6 +74,11 @@ class PantryViewModelTest {
         override val io get() = dispatcher
         override val default get() = dispatcher
     }
+
+    /** Pins [ItemDetailViewModel.addBatch]'s `Instant.now(clock)` call; unrelated to `weekRange`,
+     * which `ItemDetailViewModel` derives from the real `LocalDate.now()` (same as
+     * [PantryViewModelTest]'s plan-entry fixtures use). */
+    private val fixedClock = Clock.fixed(Instant.parse("2026-07-12T00:00:00Z"), ZoneOffset.UTC)
 
     private var collectJob: Job? = null
 
@@ -90,6 +104,19 @@ class PantryViewModelTest {
 
         override suspend fun delete(item: FoodItem) {
             itemsFlow.value = itemsFlow.value.filterNot { it.id == item.id }
+        }
+    }
+
+    /** Always throws on [delete]; [observeById] returns [seedItem] (non-null) so
+     * [ItemDetailViewModel.deleteItem]'s `uiState.value.foodItem?.let { ... }` guard actually
+     * calls through to the repository instead of silently no-op-ing on a null `foodItem`. */
+    private class FailingFoodItemRepository(private val seedItem: FoodItem) : FoodItemRepository {
+        override fun observeAll(): Flow<List<FoodItem>> = MutableStateFlow(listOf(seedItem))
+        override fun observeById(id: Long): Flow<FoodItem?> = MutableStateFlow(seedItem)
+        override suspend fun upsert(item: FoodItem): Long =
+            throw IllegalStateException("simulated repository failure")
+        override suspend fun delete(item: FoodItem) {
+            throw IllegalStateException("simulated repository failure")
         }
     }
 
@@ -120,7 +147,7 @@ class PantryViewModelTest {
         }
 
         override suspend fun decrementForFoodItem(foodItemId: Long, amount: Double): Unit =
-            throw NotImplementedError("not used by PantryViewModelTest")
+            throw NotImplementedError("not used by ItemDetailViewModelTest")
 
         private fun recomputeTotal(foodItemId: Long) {
             val total = batches.filter { it.foodItemId == foodItemId }.sumOf { it.quantity }
@@ -130,15 +157,18 @@ class PantryViewModelTest {
         }
     }
 
-    /** Always throws on write, to prove [PantryViewModel] doesn't crash on a repository failure. */
-    private class FailingFoodItemRepository : FoodItemRepository {
-        override fun observeAll(): Flow<List<FoodItem>> = MutableStateFlow(emptyList())
-        override fun observeById(id: Long): Flow<FoodItem?> = MutableStateFlow(null)
-        override suspend fun upsert(item: FoodItem): Long =
+    /** Always throws on write, to prove [ItemDetailViewModel] doesn't crash on a repository
+     * failure. */
+    private class FailingStockBatchRepository : StockBatchRepository {
+        override fun observeForFoodItem(foodItemId: Long): Flow<List<StockBatch>> = MutableStateFlow(emptyList())
+        override fun observeTotalOnHand(foodItemId: Long): Flow<Double> = MutableStateFlow(0.0)
+        override suspend fun upsert(batch: StockBatch): Long =
             throw IllegalStateException("simulated repository failure")
-        override suspend fun delete(item: FoodItem) {
+        override suspend fun delete(batch: StockBatch) {
             throw IllegalStateException("simulated repository failure")
         }
+        override suspend fun decrementForFoodItem(foodItemId: Long, amount: Double): Unit =
+            throw NotImplementedError("not used by ItemDetailViewModelTest")
     }
 
     private class FakePlanEntryRepository : PlanEntryRepository {
@@ -160,7 +190,7 @@ class PantryViewModelTest {
         }
 
         override suspend fun markEaten(id: Long, eatenAt: Instant): Int =
-            throw NotImplementedError("not used by PantryViewModelTest")
+            throw NotImplementedError("not used by ItemDetailViewModelTest")
     }
 
     /** No recipe-referencing scenario in this test file needs real data; every call is unused. */
@@ -168,22 +198,29 @@ class PantryViewModelTest {
         override fun observeAll(): Flow<List<Recipe>> = MutableStateFlow(emptyList())
         override fun observeRecipeWithIngredients(id: Long): Flow<RecipeWithIngredients?> = MutableStateFlow(null)
         override suspend fun upsertRecipeWithIngredients(recipe: Recipe, ingredients: List<RecipeIngredient>): Long =
-            throw NotImplementedError("not used by PantryViewModelTest")
+            throw NotImplementedError("not used by ItemDetailViewModelTest")
         override suspend fun delete(recipe: Recipe): Unit =
-            throw NotImplementedError("not used by PantryViewModelTest")
+            throw NotImplementedError("not used by ItemDetailViewModelTest")
     }
 
-    /** Records every `upsert` call so the `addConversionFactor` test can assert on it; `delete`
-     * stays unused by this test file. */
+    /** Unlike [PantryViewModelTest]'s always-empty version, this one supports [seed] so
+     * `uiState.conversions` can actually be exercised for the join test. */
     private class FakeUnitConversionRepository : UnitConversionRepository {
-        val persisted = mutableListOf<Pair<Long, ConversionFactor>>()
-        override fun observeForFoodItem(foodItemId: Long): Flow<List<ConversionFactor>> = MutableStateFlow(emptyList())
-        override suspend fun upsert(foodItemId: Long, factor: ConversionFactor): Long {
-            persisted += foodItemId to factor
-            return persisted.size.toLong()
-        }
+        private val factorsByItem = mutableMapOf<Long, MutableStateFlow<List<ConversionFactor>>>()
+
+        override fun observeForFoodItem(foodItemId: Long): Flow<List<ConversionFactor>> =
+            factorsByItem.getOrPut(foodItemId) { MutableStateFlow(emptyList()) }
+
+        override suspend fun upsert(foodItemId: Long, factor: ConversionFactor): Long =
+            throw NotImplementedError("not used by ItemDetailViewModelTest")
         override suspend fun delete(foodItemId: Long, factor: ConversionFactor): Unit =
-            throw NotImplementedError("not used by PantryViewModelTest")
+            throw NotImplementedError("not used by ItemDetailViewModelTest")
+
+        /** Test-only seeding helper - bypasses [upsert] since no scenario here exercises
+         * conversion CRUD itself, only that [ItemDetailViewModel.uiState] joins it in. */
+        fun seed(foodItemId: Long, factors: List<ConversionFactor>) {
+            factorsByItem.getOrPut(foodItemId) { MutableStateFlow(emptyList()) }.value = factors
+        }
     }
 
     private fun chickenBreast(id: Long = 0L) = FoodItem(
@@ -198,66 +235,82 @@ class PantryViewModelTest {
     )
 
     private fun buildViewModel(
+        itemId: Long,
         foodItemRepository: FoodItemRepository,
         stockBatchRepository: StockBatchRepository,
         planEntryRepository: PlanEntryRepository = FakePlanEntryRepository(),
         recipeRepository: RecipeRepository = FakeRecipeRepository(),
         unitConversionRepository: UnitConversionRepository = FakeUnitConversionRepository(),
-    ) = PantryViewModel(
+    ) = ItemDetailViewModel(
+        savedStateHandle = SavedStateHandle(mapOf(ItemDetailViewModel.ITEM_ID_ARG to itemId)),
         foodItemRepository = foodItemRepository,
         stockBatchRepository = stockBatchRepository,
+        unitConversionRepository = unitConversionRepository,
         computeProjectedStockUseCase = ComputeProjectedStockUseCase(stockBatchRepository),
         planEntryRepository = planEntryRepository,
         recipeRepository = recipeRepository,
-        unitConversionRepository = unitConversionRepository,
         computeWeeklyNeedsUseCase = ComputeWeeklyNeedsUseCase(UnitConverter()),
+        clock = fixedClock,
         dispatcherProvider = testDispatcherProvider,
     )
 
-    /** Subscribes to [PantryViewModel.uiState] so its `WhileSubscribed` upstream starts running. */
-    private fun PantryViewModel.startCollecting() {
+    /** Subscribes to [ItemDetailViewModel.uiState] so its `WhileSubscribed` upstream starts
+     * running. */
+    private fun ItemDetailViewModel.startCollecting() {
         collectJob = uiState.onEach { }.launchIn(MainScope())
     }
 
     @Test
-    fun `uiState starts with isLoading true and no items before any food item is persisted`() = runTest {
-        val viewModel = buildViewModel(FakeFoodItemRepository(), FakeStockBatchRepository())
+    fun `uiState for a nonexistent item shows foodItem null and default fields, without crashing`() = runTest {
+        val viewModel = buildViewModel(
+            itemId = 999L,
+            foodItemRepository = FakeFoodItemRepository(),
+            stockBatchRepository = FakeStockBatchRepository(),
+        )
         viewModel.startCollecting()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
 
-        assertTrue(state.items.isEmpty())
+        assertNull(state.foodItem)
+        assertTrue(state.batches.isEmpty())
+        assertTrue(state.conversions.isEmpty())
+        assertEquals(0.0, state.actualStock, 0.0001)
+        assertEquals(0.0, state.projectedStock, 0.0001)
         assertEquals(false, state.isLoading)
     }
 
     @Test
-    fun `uiState joins a persisted food item with its actual and projected stock, equal when nothing is planned`() = runTest {
+    fun `uiState joins the food item with its batches, conversions and actual stock, projected equal to actual when nothing is planned`() = runTest {
         val foodItemRepository = FakeFoodItemRepository()
         val stockBatchRepository = FakeStockBatchRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
-        viewModel.startCollecting()
+        val unitConversionRepository = FakeUnitConversionRepository()
 
         val id = foodItemRepository.upsert(chickenBreast())
         stockBatchRepository.upsert(StockBatch(foodItemId = id, quantity = 500.0, addedAt = Instant.EPOCH))
+        val factor = ConversionFactor(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = 185.0)
+        unitConversionRepository.seed(id, listOf(factor))
+
+        val viewModel = buildViewModel(id, foodItemRepository, stockBatchRepository, unitConversionRepository = unitConversionRepository)
+        viewModel.startCollecting()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
 
-        assertEquals(1, state.items.size)
-        assertEquals("Chicken breast", state.items.first().foodItem.name)
-        assertEquals(500.0, state.items.first().actualStock, 0.0001)
+        assertEquals("Chicken breast", state.foodItem?.name)
+        assertEquals(1, state.batches.size)
+        assertEquals(500.0, state.batches.first().quantity, 0.0001)
+        assertEquals(listOf(factor), state.conversions)
+        assertEquals(500.0, state.actualStock, 0.0001)
         // No plan entry for this item this week - committed quantity is zero, so projected == actual.
-        assertEquals(500.0, state.items.first().projectedStock, 0.0001)
+        assertEquals(500.0, state.projectedStock, 0.0001)
     }
 
     @Test
-    fun `projectedStock subtracts a not-yet-eaten quick-add plan entry's quantity for that item`() = runTest {
+    fun `projectedStock subtracts a not-yet-eaten quick-add plan entry's quantity for this item`() = runTest {
         val foodItemRepository = FakeFoodItemRepository()
         val stockBatchRepository = FakeStockBatchRepository()
         val planEntryRepository = FakePlanEntryRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository, planEntryRepository = planEntryRepository)
-        viewModel.startCollecting()
 
         val id = foodItemRepository.upsert(chickenBreast())
         stockBatchRepository.upsert(StockBatch(foodItemId = id, quantity = 500.0, addedAt = Instant.EPOCH))
@@ -270,203 +323,118 @@ class PantryViewModelTest {
                 quantity = 200.0,
             ),
         )
-        advanceUntilIdle()
 
-        val row = viewModel.uiState.value.items.first()
-        assertEquals(500.0, row.actualStock, 0.0001)
-        assertEquals(300.0, row.projectedStock, 0.0001)
-    }
-
-    @Test
-    fun `projectedStock ignores an already-eaten plan entry, since it's already reflected in actual stock`() = runTest {
-        val foodItemRepository = FakeFoodItemRepository()
-        val stockBatchRepository = FakeStockBatchRepository()
-        val planEntryRepository = FakePlanEntryRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository, planEntryRepository = planEntryRepository)
+        val viewModel = buildViewModel(id, foodItemRepository, stockBatchRepository, planEntryRepository = planEntryRepository)
         viewModel.startCollecting()
-
-        val id = foodItemRepository.upsert(chickenBreast())
-        stockBatchRepository.upsert(StockBatch(foodItemId = id, quantity = 500.0, addedAt = Instant.EPOCH))
-        planEntryRepository.upsert(
-            PlanEntry(
-                dateEpochDay = LocalDate.now().toEpochDay(),
-                mealSlot = MealSlot.LUNCH,
-                type = PlanEntryType.ITEM,
-                foodItemId = id,
-                quantity = 200.0,
-                eaten = true,
-            ),
-        )
         advanceUntilIdle()
 
-        val row = viewModel.uiState.value.items.first()
-        assertEquals(500.0, row.actualStock, 0.0001)
-        assertEquals(500.0, row.projectedStock, 0.0001)
-    }
-
-    @Test
-    fun `addItem persists a new food item so it appears in uiState, returning its new id`() = runTest {
-        val foodItemRepository = FakeFoodItemRepository()
-        val stockBatchRepository = FakeStockBatchRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
-        viewModel.startCollecting()
-
-        val id = viewModel.addItem(chickenBreast())
-        advanceUntilIdle()
-
-        assertTrue(id > 0)
         val state = viewModel.uiState.value
-        assertEquals(1, state.items.size)
-        assertEquals("Chicken breast", state.items.first().foodItem.name)
-        assertEquals(id, state.items.first().foodItem.id)
+        assertEquals(500.0, state.actualStock, 0.0001)
+        assertEquals(300.0, state.projectedStock, 0.0001)
     }
 
     @Test
-    fun `deleteItem removes the food item from uiState`() = runTest {
+    fun `addBatch persists a new batch that appears in uiState-batches and increases actualStock`() = runTest {
         val foodItemRepository = FakeFoodItemRepository()
         val stockBatchRepository = FakeStockBatchRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
-        viewModel.startCollecting()
-
         val id = foodItemRepository.upsert(chickenBreast())
-        advanceUntilIdle()
-        assertEquals(1, viewModel.uiState.value.items.size)
-
-        viewModel.deleteItem(chickenBreast(id = id))
-        advanceUntilIdle()
-
-        assertTrue(viewModel.uiState.value.items.isEmpty())
-    }
-
-    @Test
-    fun `addStockBatch increases actual and projected stock for the affected item`() = runTest {
-        val foodItemRepository = FakeFoodItemRepository()
-        val stockBatchRepository = FakeStockBatchRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
+        val viewModel = buildViewModel(id, foodItemRepository, stockBatchRepository)
         viewModel.startCollecting()
+        advanceUntilIdle()
+        assertEquals(0.0, viewModel.uiState.value.actualStock, 0.0001)
 
+        viewModel.addBatch(quantity = 250.0, expiryDate = LocalDate.of(2026, 8, 1))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(1, state.batches.size)
+        assertEquals(250.0, state.batches.first().quantity, 0.0001)
+        assertEquals(LocalDate.of(2026, 8, 1), state.batches.first().expiryDate)
+        assertEquals(fixedClock.instant(), state.batches.first().addedAt)
+        assertEquals(250.0, state.actualStock, 0.0001)
+    }
+
+    @Test
+    fun `deleteBatch removes it from uiState-batches and decreases actualStock`() = runTest {
+        val foodItemRepository = FakeFoodItemRepository()
+        val stockBatchRepository = FakeStockBatchRepository()
         val id = foodItemRepository.upsert(chickenBreast())
-        advanceUntilIdle()
-        assertEquals(0.0, viewModel.uiState.value.items.first().actualStock, 0.0001)
-
-        viewModel.addStockBatch(StockBatch(foodItemId = id, quantity = 250.0, addedAt = Instant.EPOCH))
-        advanceUntilIdle()
-
-        val row = viewModel.uiState.value.items.first()
-        assertEquals(250.0, row.actualStock, 0.0001)
-        assertEquals(250.0, row.projectedStock, 0.0001)
-    }
-
-    @Test
-    fun `observeBatchesForItem reflects batches added and removed for that item only`() = runTest {
-        val foodItemRepository = FakeFoodItemRepository()
-        val stockBatchRepository = FakeStockBatchRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
-
-        val riceId = foodItemRepository.upsert(chickenBreast().copy(name = "Rice"))
-        val chickenId = foodItemRepository.upsert(chickenBreast())
-
-        val riceBatch = StockBatch(foodItemId = riceId, quantity = 500.0, addedAt = Instant.EPOCH)
-        val batchId = stockBatchRepository.upsert(riceBatch)
-        stockBatchRepository.upsert(StockBatch(foodItemId = chickenId, quantity = 300.0, addedAt = Instant.EPOCH))
-
-        val batchesForRice = viewModel.observeBatchesForItem(riceId).first()
-        assertEquals(1, batchesForRice.size)
-        assertEquals(500.0, batchesForRice.first().quantity, 0.0001)
-
-        viewModel.deleteStockBatch(riceBatch.copy(id = batchId))
-        advanceUntilIdle()
-
-        assertEquals(emptyList<StockBatch>(), viewModel.observeBatchesForItem(riceId).first())
-    }
-
-    @Test
-    fun `updateItem changes an existing item's fields as reflected in uiState`() = runTest {
-        val foodItemRepository = FakeFoodItemRepository()
-        val stockBatchRepository = FakeStockBatchRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
+        val batchId = stockBatchRepository.upsert(StockBatch(foodItemId = id, quantity = 500.0, addedAt = Instant.EPOCH))
+        val viewModel = buildViewModel(id, foodItemRepository, stockBatchRepository)
         viewModel.startCollecting()
+        advanceUntilIdle()
+        assertEquals(1, viewModel.uiState.value.batches.size)
 
-        val id = foodItemRepository.upsert(chickenBreast())
+        viewModel.deleteBatch(StockBatch(id = batchId, foodItemId = id, quantity = 500.0, addedAt = Instant.EPOCH))
         advanceUntilIdle()
 
-        viewModel.updateItem(chickenBreast(id = id).copy(name = "Grilled chicken breast", caloriesPerUnit = 1.8))
-        advanceUntilIdle()
-
-        val row = viewModel.uiState.value.items.first()
-        assertEquals("Grilled chicken breast", row.foodItem.name)
-        assertEquals(1.8, row.foodItem.caloriesPerUnit!!, 0.0001)
+        val state = viewModel.uiState.value
+        assertTrue(state.batches.isEmpty())
+        assertEquals(0.0, state.actualStock, 0.0001)
     }
 
     @Test
-    fun `updateItem emits an errorEvent instead of crashing when the repository throws`() = runTest {
-        val viewModel = buildViewModel(FailingFoodItemRepository(), FakeStockBatchRepository())
+    fun `deleteItem calls through to the food item repository's delete`() = runTest {
+        val foodItemRepository = FakeFoodItemRepository()
+        val stockBatchRepository = FakeStockBatchRepository()
+        val id = foodItemRepository.upsert(chickenBreast())
+        val viewModel = buildViewModel(id, foodItemRepository, stockBatchRepository)
+        viewModel.startCollecting()
+        advanceUntilIdle()
+        assertEquals("Chicken breast", viewModel.uiState.value.foodItem?.name)
+
+        viewModel.deleteItem()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.foodItem)
+        assertNull(foodItemRepository.observeById(id).first())
+    }
+
+    @Test
+    fun `addBatch emits an errorEvent instead of crashing when the repository throws`() = runTest {
+        val foodItemRepository = FakeFoodItemRepository()
+        val id = foodItemRepository.upsert(chickenBreast())
+        val viewModel = buildViewModel(id, foodItemRepository, FailingStockBatchRepository())
         viewModel.startCollecting()
 
         val errorDeferred = async { viewModel.errorEvent.first() }
         advanceUntilIdle()
 
-        viewModel.updateItem(chickenBreast(id = 1L))
+        viewModel.addBatch(quantity = 100.0, expiryDate = null)
         advanceUntilIdle()
 
         assertEquals("simulated repository failure", errorDeferred.await())
     }
 
     @Test
-    fun `uiState row exposes batchCount matching the number of stock batches for that item`() = runTest {
+    fun `deleteBatch emits an errorEvent instead of crashing when the repository throws`() = runTest {
         val foodItemRepository = FakeFoodItemRepository()
-        val stockBatchRepository = FakeStockBatchRepository()
-        val viewModel = buildViewModel(foodItemRepository, stockBatchRepository)
+        val id = foodItemRepository.upsert(chickenBreast())
+        val viewModel = buildViewModel(id, foodItemRepository, FailingStockBatchRepository())
         viewModel.startCollecting()
 
-        val id = foodItemRepository.upsert(chickenBreast())
-        advanceUntilIdle()
-        assertEquals(0, viewModel.uiState.value.items.first().batchCount)
-
-        stockBatchRepository.upsert(StockBatch(foodItemId = id, quantity = 200.0, addedAt = Instant.EPOCH))
-        stockBatchRepository.upsert(StockBatch(foodItemId = id, quantity = 300.0, addedAt = Instant.EPOCH))
+        val errorDeferred = async { viewModel.errorEvent.first() }
         advanceUntilIdle()
 
-        assertEquals(2, viewModel.uiState.value.items.first().batchCount)
+        viewModel.deleteBatch(StockBatch(id = 1L, foodItemId = id, quantity = 100.0, addedAt = Instant.EPOCH))
+        advanceUntilIdle()
+
+        assertEquals("simulated repository failure", errorDeferred.await())
     }
 
     @Test
-    fun `addConversionFactor persists it via the unit conversion repository`() = runTest {
-        val foodItemRepository = FakeFoodItemRepository()
+    fun `deleteItem emits an errorEvent instead of crashing when the repository throws`() = runTest {
         val stockBatchRepository = FakeStockBatchRepository()
-        val unitConversionRepository = FakeUnitConversionRepository()
-        val viewModel = buildViewModel(
-            foodItemRepository,
-            stockBatchRepository,
-            unitConversionRepository = unitConversionRepository,
-        )
+        val seedItem = chickenBreast(id = 1L)
+        val viewModel = buildViewModel(1L, FailingFoodItemRepository(seedItem), stockBatchRepository)
         viewModel.startCollecting()
 
-        val id = foodItemRepository.upsert(chickenBreast())
+        val errorDeferred = async { viewModel.errorEvent.first() }
         advanceUntilIdle()
 
-        val factor = ConversionFactor(fromUnit = MeasurementUnit.CUP, toUnit = MeasurementUnit.GRAM, factor = 185.0)
-        viewModel.addConversionFactor(id, factor)
+        viewModel.deleteItem()
         advanceUntilIdle()
 
-        assertEquals(listOf(id to factor), unitConversionRepository.persisted)
-    }
-
-    @Test
-    fun `addItem propagates a repository failure to its caller instead of swallowing it`() = runTest {
-        // Unlike updateItem/deleteItem (fire-and-forget via launchOnIo, error surfaced through
-        // errorEvent), addItem is a plain suspend function so its caller can await the new id for
-        // an id-dependent follow-up (e.g. attaching a starting batch) - which also means a failure
-        // must propagate directly to that caller rather than being swallowed internally.
-        val viewModel = buildViewModel(FailingFoodItemRepository(), FakeStockBatchRepository())
-        viewModel.startCollecting()
-        advanceUntilIdle()
-
-        try {
-            viewModel.addItem(chickenBreast())
-            org.junit.Assert.fail("Expected addItem to propagate the repository's exception")
-        } catch (e: IllegalStateException) {
-            assertEquals("simulated repository failure", e.message)
-        }
+        assertEquals("simulated repository failure", errorDeferred.await())
     }
 }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.healthypantry.core.common.DispatcherProvider
 import com.healthypantry.core.common.Result
+import com.healthypantry.core.unit.ConversionFactor
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.nutrition.data.NutritionLookupRepository
 import com.healthypantry.feature.nutrition.domain.model.NutritionLookupError
@@ -25,6 +26,15 @@ import javax.inject.Inject
  * [PantryViewModel.addItem]/[PantryViewModel.updateItem]'s job - this ViewModel only resolves
  * lookups into form state and never touches `FoodItemRepository` directly, so `upsert` logic
  * stays in one place.
+ *
+ * [addConversionRow]/[updateConversionRow]/[removeConversionRow] manage
+ * [ItemFormUiState.conversions] the same index-addressed way
+ * `RecipeViewModel.addIngredientRow`/`updateIngredientRow`/`removeIngredientRow` manage
+ * `RecipeFormState.ingredients` — for the same reason this ViewModel never touches
+ * `FoodItemRepository`, it never touches
+ * `com.healthypantry.feature.pantry.data.repo.UnitConversionRepository` either;
+ * [buildConversionFactors] exposes the parsed list for the caller (a later PR's screen, via
+ * `PantryViewModel`) to persist.
  */
 @HiltViewModel
 class ItemFormViewModel @Inject constructor(
@@ -128,6 +138,20 @@ class ItemFormViewModel @Inject constructor(
 
     /** Builds the [FoodItem] to persist from the current form state (see [ItemFormUiState.toFoodItem]). */
     fun buildFoodItem(existingId: Long = 0L): FoodItem = uiState.value.toFoodItem(existingId)
+
+    fun addConversionRow() =
+        _uiState.update { it.copy(conversions = it.conversions + ConversionRowState()) }
+
+    fun updateConversionRow(index: Int, row: ConversionRowState) = _uiState.update { state ->
+        state.copy(conversions = state.conversions.mapIndexed { i, existing -> if (i == index) row else existing })
+    }
+
+    fun removeConversionRow(index: Int) = _uiState.update { state ->
+        state.copy(conversions = state.conversions.filterIndexed { i, _ -> i != index })
+    }
+
+    /** Builds the [ConversionFactor]s to persist from the current form state (see [ItemFormUiState.toConversionFactors]). */
+    fun buildConversionFactors(): List<ConversionFactor> = uiState.value.toConversionFactors()
 
     /**
      * Runs a lookup [block] on [DispatcherProvider.io], guarding against any exception the OFF/USDA

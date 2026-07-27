@@ -3,12 +3,16 @@ package com.healthypantry.feature.recipes.ui.vm
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.healthypantry.core.common.DispatcherProvider
+import com.healthypantry.core.common.Result
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.pantry.data.repo.FoodItemRepository
 import com.healthypantry.feature.pantry.domain.model.FoodItem
+import com.healthypantry.feature.planning.domain.model.MacroTotals
+import com.healthypantry.feature.planning.domain.usecase.ComputeMacroTotalsUseCase
 import com.healthypantry.feature.recipes.data.repo.RecipeRepository
 import com.healthypantry.feature.recipes.domain.model.Recipe
 import com.healthypantry.feature.recipes.domain.model.RecipeIngredient
+import com.healthypantry.feature.recipes.domain.model.RecipeWithIngredients
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import javax.inject.Inject
@@ -23,6 +27,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -49,9 +55,26 @@ data class RecipeFormState(
     val ingredients: List<RecipeIngredientFormRow> = emptyList(),
 )
 
+/** Precomputed per-recipe macro rollup for one recipe card in `RecipeListContent`'s list (spec
+ * "Recipe total from ingredients"). [macroTotals] is best-effort: an
+ * unresolved ingredient unit conversion (no registered [com.healthypantry.core.unit.ConversionFactor]
+ * and the ingredient's unit differs from its FoodItem's canonical unit) falls back to
+ * [MacroTotals.ZERO] with `isComplete = false` rather than crashing the list — per-item
+ * conversion-factor registration for the recipes list is out of scope for this restyle (the same
+ * "PR8" macro-rollup wiring `RecipeIngredient`/`RecipeWithIngredients` KDoc already defers). */
+data class RecipeMacroSummary(
+    val ingredientCount: Int,
+    val macroTotals: MacroTotals,
+) {
+    companion object {
+        val EMPTY = RecipeMacroSummary(ingredientCount = 0, macroTotals = MacroTotals.ZERO.copy(isComplete = false))
+    }
+}
+
 data class RecipeUiState(
     val recipes: List<Recipe> = emptyList(),
     val foodItems: List<FoodItem> = emptyList(),
+    val macroSummariesByRecipeId: Map<Long, RecipeMacroSummary> = emptyMap(),
     val isLoading: Boolean = true,
 )
 
@@ -74,17 +97,61 @@ data class RecipeUiState(
 class RecipeViewModel @Inject constructor(
     private val recipeRepository: RecipeRepository,
     private val foodItemRepository: FoodItemRepository,
+    private val computeMacroTotalsUseCase: ComputeMacroTotalsUseCase,
     private val dispatcherProvider: DispatcherProvider,
 ) : ViewModel() {
 
+    /**
+     * [recipes]/[foodItems] combine reactively (unchanged), but each recipe's
+     * [RecipeMacroSummary] is resolved once per emission via a plain `flow { ... first() }`
+     * builder — same "resolve once, not a fully reactive nested-Flow join" convention
+     * `PlanViewModel.resolveWeeklyNeeds` already established, since the summaries only need to
+     * re-run when the recipe/food-item lists themselves change, not on every unrelated
+     * ingredient-table write elsewhere.
+     */
     val uiState: StateFlow<RecipeUiState> =
         combine(recipeRepository.observeAll(), foodItemRepository.observeAll()) { recipes, foodItems ->
-            RecipeUiState(recipes = recipes, foodItems = foodItems, isLoading = false)
+            recipes to foodItems
+        }.flatMapLatest { (recipes, foodItems) ->
+            flow {
+                val summaries = recipes.associate { recipe ->
+                    val withIngredients = recipeRepository.observeRecipeWithIngredients(recipe.id).first()
+                    recipe.id to macroSummaryFor(withIngredients)
+                }
+                emit(
+                    RecipeUiState(
+                        recipes = recipes,
+                        foodItems = foodItems,
+                        macroSummariesByRecipeId = summaries,
+                        isLoading = false,
+                    ),
+                )
+            }
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
             initialValue = RecipeUiState(isLoading = true),
         )
+
+    /** No registered [com.healthypantry.core.unit.ConversionFactor]s are resolved here (see
+     * [RecipeMacroSummary] KDoc) — every ingredient's own [ComputeMacroTotalsUseCase.computeForRecipe]
+     * conversion still succeeds whenever its unit already matches its FoodItem's canonical unit
+     * ([com.healthypantry.core.unit.UnitConverter.convert] short-circuits on equal units), which
+     * covers the common case; a genuine cross-unit mismatch degrades to an incomplete zero total
+     * instead of surfacing a [com.healthypantry.core.unit.UnitConversionError] to this list. */
+    private fun macroSummaryFor(withIngredients: RecipeWithIngredients?): RecipeMacroSummary {
+        if (withIngredients == null) return RecipeMacroSummary.EMPTY
+        val result = computeMacroTotalsUseCase.computeForRecipe(
+            recipeWithIngredients = withIngredients,
+            requestedServings = withIngredients.recipe.servings.toDouble(),
+            conversionFactorsByFoodItemId = emptyMap(),
+        )
+        val macroTotals = when (result) {
+            is Result.Success -> result.value
+            is Result.Failure -> MacroTotals.ZERO.copy(isComplete = false)
+        }
+        return RecipeMacroSummary(ingredientCount = withIngredients.ingredients.size, macroTotals = macroTotals)
+    }
 
     private val _formState = MutableStateFlow(RecipeFormState())
     val formState: StateFlow<RecipeFormState> = _formState.asStateFlow()

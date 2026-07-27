@@ -1,5 +1,6 @@
 package com.healthypantry.feature.recipes.ui.screen
 
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -10,8 +11,10 @@ import com.healthypantry.app.theme.HealthyPantryTheme
 import com.healthypantry.core.unit.MeasurementUnit
 import com.healthypantry.feature.pantry.domain.model.FoodItem
 import com.healthypantry.feature.pantry.domain.model.FoodItemSource
+import com.healthypantry.feature.planning.domain.model.MacroTotals
 import com.healthypantry.feature.recipes.domain.model.Recipe
 import com.healthypantry.feature.recipes.ui.vm.RecipeFormState
+import com.healthypantry.feature.recipes.ui.vm.RecipeMacroSummary
 import com.healthypantry.feature.recipes.ui.vm.RecipeUiState
 import java.time.Instant
 import org.junit.Assert.assertEquals
@@ -49,17 +52,28 @@ class RecipeScreenTest {
     )
 
     @Test
-    fun listRendersEachRecipeNameAndServings() {
-        val state = RecipeUiState(recipes = listOf(recipe(id = 1L, name = "Chicken stir-fry", servings = 2)), isLoading = false)
+    fun listRendersEachRecipeNameIngredientCountAndMacroTags() {
+        val target = recipe(id = 1L, name = "Chicken stir-fry")
+        val state = RecipeUiState(
+            recipes = listOf(target),
+            macroSummariesByRecipeId = mapOf(
+                1L to RecipeMacroSummary(
+                    ingredientCount = 4,
+                    macroTotals = MacroTotals(calories = 330.0, proteinGrams = 62.0, carbsGrams = 0.0, fatGrams = 7.2),
+                ),
+            ),
+            isLoading = false,
+        )
 
         composeTestRule.setContent {
             HealthyPantryTheme {
-                RecipeListContent(uiState = state, onAddClick = {}, onEditClick = {}, onDeleteClick = {})
+                RecipeListContent(uiState = state, onAddClick = {}, onEditClick = {})
             }
         }
 
         composeTestRule.onNodeWithText("Chicken stir-fry").assertIsDisplayed()
-        composeTestRule.onNodeWithText("2 servings").assertIsDisplayed()
+        composeTestRule.onNodeWithText("4 ingredients").assertIsDisplayed()
+        composeTestRule.onNodeWithText("330.0 kcal").assertIsDisplayed()
     }
 
     @Test
@@ -70,7 +84,6 @@ class RecipeScreenTest {
                     uiState = RecipeUiState(recipes = emptyList(), isLoading = false),
                     onAddClick = {},
                     onEditClick = {},
-                    onDeleteClick = {},
                 )
             }
         }
@@ -79,24 +92,24 @@ class RecipeScreenTest {
     }
 
     @Test
-    fun tappingDeleteInvokesCallbackWithTheTappedRecipe() {
-        var deleted: Recipe? = null
+    fun tappingCardInvokesOnEditClickWithTheTappedRecipe() {
+        var edited: Recipe? = null
         val target = recipe(id = 42L, name = "Chicken stir-fry")
         val state = RecipeUiState(recipes = listOf(target), isLoading = false)
 
         composeTestRule.setContent {
             HealthyPantryTheme {
-                RecipeListContent(uiState = state, onAddClick = {}, onEditClick = {}, onDeleteClick = { deleted = it })
+                RecipeListContent(uiState = state, onAddClick = {}, onEditClick = { edited = it })
             }
         }
 
-        composeTestRule.onNodeWithContentDescription("Delete Chicken stir-fry").performClick()
+        composeTestRule.onNodeWithContentDescription("Open Chicken stir-fry").performClick()
 
-        assertEquals(target, deleted)
+        assertEquals(target, edited)
     }
 
     @Test
-    fun addModeShowsAddTitleAndCoreFormFields() {
+    fun addModeShowsNewRecipeTitleAndCoreFormFieldsWithNoDeleteButton() {
         composeTestRule.setContent {
             HealthyPantryTheme {
                 RecipeFormContent(
@@ -114,9 +127,60 @@ class RecipeScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Add recipe").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Name").assertIsDisplayed()
+        composeTestRule.onNodeWithText("New recipe").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Recipe name").assertIsDisplayed()
         composeTestRule.onNodeWithText("Servings").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Delete recipe").assertDoesNotExist()
+    }
+
+    @Test
+    fun editModeShowsEditRecipeTitleAndDeleteButton() {
+        composeTestRule.setContent {
+            HealthyPantryTheme {
+                RecipeFormContent(
+                    formState = RecipeFormState(id = 7L, name = "Chicken stir-fry"),
+                    availableFoodItems = emptyList(),
+                    onNameChanged = {},
+                    onServingsChanged = {},
+                    onNotesChanged = {},
+                    onAddIngredientRow = {},
+                    onIngredientRowChanged = { _, _ -> },
+                    onRemoveIngredientRow = {},
+                    onSaveClick = {},
+                    onCancelClick = {},
+                    onDeleteClick = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Edit recipe").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Delete recipe").assertIsDisplayed()
+    }
+
+    @Test
+    fun tappingDeleteButtonInvokesCallback() {
+        var deleted = false
+        composeTestRule.setContent {
+            HealthyPantryTheme {
+                RecipeFormContent(
+                    formState = RecipeFormState(id = 7L, name = "Chicken stir-fry"),
+                    availableFoodItems = emptyList(),
+                    onNameChanged = {},
+                    onServingsChanged = {},
+                    onNotesChanged = {},
+                    onAddIngredientRow = {},
+                    onIngredientRowChanged = { _, _ -> },
+                    onRemoveIngredientRow = {},
+                    onSaveClick = {},
+                    onCancelClick = {},
+                    onDeleteClick = { deleted = true },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Delete recipe").performClick()
+
+        assertTrue(deleted)
     }
 
     @Test
@@ -139,7 +203,7 @@ class RecipeScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Name").performTextInput("Chicken stir-fry")
+        composeTestRule.onNodeWithText("Recipe name").performTextInput("Chicken stir-fry")
 
         assertEquals("Chicken stir-fry", typed)
     }
@@ -189,7 +253,7 @@ class RecipeScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Save").performClick()
+        composeTestRule.onNodeWithText("Save recipe").performClick()
 
         assertTrue(saved)
     }
