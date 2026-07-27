@@ -9,6 +9,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.healthypantry.app.theme.HealthyPantryTheme
 import com.healthypantry.core.unit.MeasurementUnit
+import com.healthypantry.feature.nutrition.domain.model.NutritionResult
+import com.healthypantry.feature.nutrition.domain.model.NutritionSource
 import com.healthypantry.feature.pantry.ui.vm.ConversionRowState
 import com.healthypantry.feature.pantry.ui.vm.ItemFormUiState
 import org.junit.Assert.assertEquals
@@ -207,5 +209,61 @@ class ItemFormScreenTest {
         composeTestRule.onNodeWithContentDescription("Back").performClick()
 
         assertTrue(cancelled)
+    }
+
+    @Test
+    fun usdaResultRowWithBrandAndServingDataShowsBrandSuffixedTitleAndPerServingMacros() {
+        val result = NutritionResult(
+            name = "Cheerios",
+            caloriesPer100 = 379.0,
+            proteinGramsPer100 = 6.0,
+            carbsGramsPer100 = 73.0,
+            fatGramsPer100 = 6.9,
+            source = NutritionSource.USDA_FOOD_DATA_CENTRAL,
+            brand = "General Mills",
+            servingSize = 28.0,
+            servingSizeUnit = "g",
+            householdServingFullText = "1 cup",
+        )
+        setContent(uiState = ItemFormUiState(searchResults = listOf(result)), isEditing = true)
+
+        composeTestRule.onNodeWithText("Cheerios (General Mills)").assertIsDisplayed()
+        composeTestRule.onNodeWithText("106 kcal per 28g (1 cup) · 1.7g P · 20.4g C · 1.9g F").assertIsDisplayed()
+    }
+
+    @Test
+    fun usdaResultRowWithServingSizeButNoHouseholdTextOmitsTrailingParens() {
+        val result = NutritionResult(
+            name = "Protein Bar",
+            caloriesPer100 = 350.0,
+            proteinGramsPer100 = 30.0,
+            carbsGramsPer100 = 40.0,
+            fatGramsPer100 = 10.0,
+            source = NutritionSource.USDA_FOOD_DATA_CENTRAL,
+            brand = null,
+            servingSize = 60.0,
+            servingSizeUnit = "g",
+            householdServingFullText = null,
+        )
+        setContent(uiState = ItemFormUiState(searchResults = listOf(result)), isEditing = true)
+
+        composeTestRule.onNodeWithText("Protein Bar").assertIsDisplayed()
+        composeTestRule.onNodeWithText("210 kcal per 60g · 18.0g P · 24.0g C · 6.0g F").assertIsDisplayed()
+    }
+
+    @Test
+    fun usdaResultRowWithNoServingOrBrandDataFallsBackToPer100gSummaryWithNoBrandSuffix() {
+        val result = NutritionResult(
+            name = "Broccoli, raw",
+            caloriesPer100 = 34.0,
+            proteinGramsPer100 = 2.82,
+            carbsGramsPer100 = 6.64,
+            fatGramsPer100 = 0.37,
+            source = NutritionSource.USDA_FOOD_DATA_CENTRAL,
+        )
+        setContent(uiState = ItemFormUiState(searchResults = listOf(result)), isEditing = true)
+
+        composeTestRule.onNodeWithText("Broccoli, raw").assertIsDisplayed()
+        composeTestRule.onNodeWithText("34 kcal/100g · 2.8g P · 6.6g C · 0.4g F").assertIsDisplayed()
     }
 }

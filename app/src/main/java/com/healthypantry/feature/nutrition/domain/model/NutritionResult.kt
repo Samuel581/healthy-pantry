@@ -14,6 +14,11 @@ package com.healthypantry.feature.nutrition.domain.model
  * entries) frequently omit them. `null` means "not reported by the source" and MUST be kept
  * distinct from a verified `0.0` — collapsing the two would misrepresent an unknown macro as a
  * confirmed zero-calorie/zero-macro food.
+ *
+ * [brand], [servingSize], [servingSizeUnit], and [householdServingFullText] are display-only
+ * fields for rendering a search result row (brand suffix, per-serving macro line) — they are
+ * separate from the per-100 macro fields above, which remain the only fields the form pre-fill
+ * flow ([com.healthypantry.feature.pantry.ui.vm.ItemFormUiState]'s `prefillFrom`) reads from.
  */
 data class NutritionResult(
     val name: String,
@@ -23,6 +28,10 @@ data class NutritionResult(
     val fatGramsPer100: Double?,
     val source: NutritionSource,
     val externalId: String? = null,
+    val brand: String? = null,
+    val servingSize: Double? = null,
+    val servingSizeUnit: String? = null,
+    val householdServingFullText: String? = null,
 )
 
 /** Which backing source answered a [NutritionResult]. */

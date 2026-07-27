@@ -64,6 +64,7 @@ import com.healthypantry.feature.pantry.ui.vm.ItemFormViewModel
 import com.healthypantry.feature.pantry.ui.vm.PantryViewModel
 import java.time.Instant
 import java.time.LocalDate
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
@@ -523,11 +524,15 @@ private fun UsdaResultRow(result: NutritionResult, onClick: () -> Unit, modifier
         color = extraColors.neutral200,
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = result.name, style = MaterialTheme.typography.bodyLarge)
-            Text(text = usdaMacroSummary(result), style = MaterialTheme.typography.bodySmall, color = extraColors.neutral700)
+            Text(text = usdaResultTitle(result), style = MaterialTheme.typography.bodyLarge)
+            Text(text = usdaServingSummary(result), style = MaterialTheme.typography.bodySmall, color = extraColors.neutral700)
         }
     }
 }
+
+/** Row title: the food name, with the brand appended in parens when known. */
+private fun usdaResultTitle(result: NutritionResult): String =
+    result.brand?.let { "${result.name} ($it)" } ?: result.name
 
 /** "kcal/100g · P · C · F" one-line macro summary for a USDA search result row. */
 private fun usdaMacroSummary(result: NutritionResult): String {
@@ -536,6 +541,31 @@ private fun usdaMacroSummary(result: NutritionResult): String {
     val carbs = result.carbsGramsPer100?.let { "%.1fg C".format(it) } ?: "—g C"
     val fat = result.fatGramsPer100?.let { "%.1fg F".format(it) } ?: "—g F"
     return "$kcal/100g · $protein · $carbs · $fat"
+}
+
+/**
+ * "kcal per serving · P · C · F" macro summary scaled to the food's actual serving size, falling
+ * back to [usdaMacroSummary]'s per-100g line when serving data is missing (e.g. Foundation-style
+ * USDA entries that don't report a serving size).
+ */
+private fun usdaServingSummary(result: NutritionResult): String {
+    val servingSize = result.servingSize
+    val servingSizeUnit = result.servingSizeUnit
+    if (servingSize == null || servingSize <= 0.0 || servingSizeUnit == null) {
+        return usdaMacroSummary(result)
+    }
+
+    val scale = servingSize / 100.0
+    val kcal = result.caloriesPer100?.let { "%.0f kcal".format(it * scale) } ?: "— kcal"
+    val protein = result.proteinGramsPer100?.let { "%.1fg P".format(it * scale) } ?: "—g P"
+    val carbs = result.carbsGramsPer100?.let { "%.1fg C".format(it * scale) } ?: "—g C"
+    val fat = result.fatGramsPer100?.let { "%.1fg F".format(it * scale) } ?: "—g F"
+
+    val servingSizeLabel = "%.1f".format(Locale.US, servingSize).removeSuffix(".0")
+    val servingLabel = result.householdServingFullText?.let { "$servingSizeLabel$servingSizeUnit ($it)" }
+        ?: "$servingSizeLabel$servingSizeUnit"
+
+    return "$kcal per $servingLabel · $protein · $carbs · $fat"
 }
 
 @Composable

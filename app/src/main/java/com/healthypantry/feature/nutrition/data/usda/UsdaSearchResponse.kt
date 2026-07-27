@@ -17,6 +17,12 @@ data class UsdaFood(
     val fdcId: Long,
     val description: String,
     val foodNutrients: List<UsdaFoodNutrient> = emptyList(),
+    val dataType: String? = null,
+    val brandName: String? = null,
+    val brandOwner: String? = null,
+    val servingSize: Double? = null,
+    val servingSizeUnit: String? = null,
+    val householdServingFullText: String? = null,
 )
 
 /**
