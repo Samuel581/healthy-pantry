@@ -124,6 +124,145 @@ class UsdaNutritionSourceTest {
     }
 
     @Test
+    fun `searchByName maps brandName and serving fields onto the domain result when present`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "totalHits": 1,
+                  "foods": [
+                    {
+                      "fdcId": 100,
+                      "description": "Cheerios",
+                      "dataType": "Branded",
+                      "brandName": "General Mills",
+                      "brandOwner": "General Mills Inc",
+                      "servingSize": 28.0,
+                      "servingSizeUnit": "g",
+                      "householdServingFullText": "1 cup",
+                      "foodNutrients": [
+                        {"nutrientId": 1008, "nutrientName": "Energy", "value": 379.0}
+                      ]
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = source.searchByName("cheerios")
+
+        val value = result.getOrNull()?.firstOrNull()
+        assertEquals("General Mills", value?.brand)
+        assertEquals(28.0, value?.servingSize ?: -1.0, 0.0001)
+        assertEquals("g", value?.servingSizeUnit)
+        assertEquals("1 cup", value?.householdServingFullText)
+    }
+
+    @Test
+    fun `searchByName falls back to brandOwner when brandName is blank`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "totalHits": 1,
+                  "foods": [
+                    {
+                      "fdcId": 101,
+                      "description": "Store Brand Oats",
+                      "brandName": "",
+                      "brandOwner": "Acme Foods",
+                      "foodNutrients": []
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = source.searchByName("oats")
+
+        assertEquals("Acme Foods", result.getOrNull()?.firstOrNull()?.brand)
+    }
+
+    @Test
+    fun `searchByName leaves brand null when neither brandName nor brandOwner is present`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "totalHits": 1,
+                  "foods": [
+                    {
+                      "fdcId": 747447,
+                      "description": "Broccoli, raw",
+                      "foodNutrients": []
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = source.searchByName("raw broccoli")
+
+        assertEquals(null, result.getOrNull()?.firstOrNull()?.brand)
+    }
+
+    @Test
+    fun `searchByName normalizes a blank householdServingFullText to null`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "totalHits": 1,
+                  "foods": [
+                    {
+                      "fdcId": 102,
+                      "description": "Protein Bar",
+                      "servingSize": 60.0,
+                      "servingSizeUnit": "g",
+                      "householdServingFullText": "",
+                      "foodNutrients": []
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = source.searchByName("protein bar")
+
+        assertEquals(null, result.getOrNull()?.firstOrNull()?.householdServingFullText)
+    }
+
+    @Test
+    fun `searchByName normalizes a blank servingSizeUnit to null`() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "totalHits": 1,
+                  "foods": [
+                    {
+                      "fdcId": 103,
+                      "description": "Granola",
+                      "servingSize": 40.0,
+                      "servingSizeUnit": "",
+                      "foodNutrients": []
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = source.searchByName("granola")
+
+        assertEquals(null, result.getOrNull()?.firstOrNull()?.servingSizeUnit)
+    }
+
+    @Test
     fun `searchByName leaves missing macro fields null instead of defaulting to zero`() = runTest {
         server.enqueue(
             MockResponse().setBody(

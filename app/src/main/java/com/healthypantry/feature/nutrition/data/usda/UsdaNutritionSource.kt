@@ -61,6 +61,10 @@ private fun UsdaFood.toDomain(): NutritionResult =
         fatGramsPer100 = nutrientValue(FAT_NUTRIENT_ID),
         source = NutritionSource.USDA_FOOD_DATA_CENTRAL,
         externalId = fdcId.toString(),
+        brand = brandName?.takeIf { it.isNotBlank() } ?: brandOwner?.takeIf { it.isNotBlank() },
+        servingSize = servingSize,
+        servingSizeUnit = servingSizeUnit?.takeIf { it.isNotBlank() },
+        householdServingFullText = householdServingFullText?.takeIf { it.isNotBlank() },
     )
 
 private fun UsdaFood.nutrientValue(nutrientId: Int): Double? =
